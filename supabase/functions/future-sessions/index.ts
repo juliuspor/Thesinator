@@ -242,7 +242,7 @@ const FIXED_SCENARIO_PROMPT =
   "Simulate a five-year thesis-to-career future in which the student chooses this thesis path and grows into a concrete future self. Stay grounded in the linked Studyond entities, and keep the outcome practical, personal, and student-readable.";
 
 const FIXED_GRAPH_PROMPT =
-  "Build a stakeholder-first thesis graph for Sebas Hahn's thesis journey. Anchor the graph around Sebas Hahn as the student, prefer known thesis stakeholders from the provided data, avoid placeholder labels like unknown student, create meaningful links between the student, thesis directions, companies, universities, supervisors, and experts, and only infer nearby organizations when strongly supported by the seed.";
+  "Build a stakeholder-first thesis graph for Marvin Heine's thesis journey. Anchor the graph around Marvin Heine (marvin.heine@student.hpi.de) as the student, prefer known thesis stakeholders from the provided data, avoid placeholder labels like unknown student, create meaningful links between the student, thesis directions, companies, universities, supervisors, and experts, and only infer nearby organizations when strongly supported by the seed.";
 
 const FIXED_SWARM_PROMPT =
   "Simulate a thesis-to-career future around this student's top thesis directions. Let the student, supervisors, experts, universities, companies, and nearby organizations shape the outcome. Keep the run practical, grounded, and useful for a live student-facing future view.";
@@ -1110,13 +1110,13 @@ const composeGraphSeed = (context: SessionContext, cards: FutureCard[]) => {
   return [
     "Studyond Thesis Graph Seed",
     `Scenario: ${FIXED_GRAPH_PROMPT}`,
-    "Student: Sebas Hahn",
+    "Student: Marvin Heine (marvin.heine@student.hpi.de)",
     `Student snapshot:\n${JSON.stringify(context.snapshot, null, 2)}`,
     `Transcript excerpt:\n${truncateText(context.transcriptText, 3000)}`,
     `Profile document excerpt:\n${truncateText(context.profileDocument, 3000)}`,
     [
       "Relationship hints:",
-      "- Sebas Hahn explores the thesis directions.",
+      "- Marvin Heine explores the thesis directions.",
       "- Thesis directions connect to the most relevant companies, universities, supervisors, and experts.",
       "- Prefer grounded links from the provided stakeholders over invented ones.",
     ].join("\n"),

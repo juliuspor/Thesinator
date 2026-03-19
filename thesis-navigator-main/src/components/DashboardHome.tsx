@@ -56,7 +56,7 @@ const DashboardHome = () => {
 
       {/* Content */}
       <main className="mx-auto w-full max-w-[1400px] px-4 py-8 sm:px-6 lg:px-8">
-        <h1 className="ds-title-xl mb-8">Nachtschicht, Sebas? 🦉</h1>
+        <h1 className="ds-title-xl mb-8">Nachtschicht, Marvin? 🦉</h1>
 
         {/* Action cards */}
         <div className="mb-12 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">

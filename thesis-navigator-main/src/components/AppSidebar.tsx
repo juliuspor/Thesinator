@@ -78,11 +78,11 @@ const AppSidebar = ({ activeItem, onItemClick }: AppSidebarProps) => {
         </button>
         <div className="flex items-center gap-3 px-2 py-2 mt-1">
           <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center ds-badge text-muted-foreground">
-            SH
+            MH
           </div>
           <div className="flex-1 min-w-0">
-            <p className="ds-small font-medium truncate">Sebas Hahn</p>
-            <p className="ds-caption text-muted-foreground truncate">sebastian.hahn@student...</p>
+            <p className="ds-small font-medium truncate">Marvin Heine</p>
+            <p className="ds-caption text-muted-foreground truncate">marvin.heine@student.hpi.de</p>
           </div>
         </div>
       </div>
