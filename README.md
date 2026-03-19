@@ -6,6 +6,38 @@ This project was developed during [START Hack](https://www.startglobal.org/start
 
 This repository is a multi-project workspace containing the MiroFish simulation engine that power the experience.
 
+## Screenshots
+
+### Discover
+
+Thesinator starts with a guided question flow that captures the student's interests and narrows the thesis search space.
+
+![Discover wizard](Documentation/screenshots/discover-wizard.png)
+
+### Thesis Matches
+
+After the discovery step, the app surfaces the strongest thesis matches before expanding into the wider network around them.
+
+![Thesis matches preview](Documentation/screenshots/thesis-matches-preview.png)
+
+### Simulation Overview
+
+The simulate step shows the student that the stakeholder map and future path are being prepared in parallel.
+
+![Simulation progress overview](Documentation/screenshots/simulation-progress-overview.png)
+
+### Live Stakeholder Map
+
+As the graph builds, students can inspect a live stakeholder map that connects people, organizations, and thesis directions around their future path.
+
+![Live stakeholder map](Documentation/screenshots/live-stakeholder-map.png)
+
+### Detailed Progress Tracking
+
+The progress panels make long-running background work legible by exposing the current step, latest update, and which part of the simulation comes next.
+
+![Simulation progress detail](Documentation/screenshots/simulation-progress-detail.png)
+
 ## What Is Active In This Repo?
 
 - `thesis-navigator-main/`: the current student-facing web app
