@@ -4,7 +4,7 @@ Thesinator is an AI-powered thesis discovery and future-planning prototype for S
 
 This project was developed during [START Hack](https://www.startglobal.org/start-hack), organized by START Global.
 
-This repository is a multi-project workspace containing the student-facing app, Supabase backend, and MiroFish simulation engine that power the experience.
+This repository is a multi-project workspace containing the MiroFish simulation engine that power the experience.
 
 ## What Is Active In This Repo?
 
