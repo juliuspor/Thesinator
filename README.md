@@ -2,6 +2,8 @@
 
 Multi-project workspace for the Studyond thesis discovery experience.
 
+This project was developed during [START Hack](https://www.startglobal.org/start-hack), organized by START Global.
+
 ## What Is Active In This Repo?
 
 - `thesis-navigator-main/`: the current student-facing web app
