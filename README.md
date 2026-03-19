@@ -4,7 +4,7 @@ Thesinator is an AI-powered thesis discovery and future-planning prototype for S
 
 This project was developed during [START Hack](https://www.startglobal.org/start-hack), organized by START Global.
 
-This repository is a multi-project workspace containing the MiroFish simulation engine that power the experience.
+This repository is a multi-project workspace containing the student-facing app, Supabase backend, and MiroFish simulation engine that power the experience.
 
 ## Screenshots
 
@@ -14,17 +14,11 @@ Thesinator starts with a guided question flow that captures the student's intere
 
 ![Discover wizard](Documentation/screenshots/discover-wizard.png)
 
-### Thesis Matches
+### Simulation Engine
 
-After the discovery step, the app surfaces the strongest thesis matches before expanding into the wider network around them.
+After the student picks a direction, Thesinator runs a live multi-step simulation that prepares stakeholder context, future paths, and thesis reasoning in parallel.
 
-![Thesis matches preview](Documentation/screenshots/thesis-matches-preview.png)
-
-### Simulation Overview
-
-The simulate step shows the student that the stakeholder map and future path are being prepared in parallel.
-
-![Simulation progress overview](Documentation/screenshots/simulation-progress-overview.png)
+![Simulation complete overview](Documentation/screenshots/simulation-complete-overview.png)
 
 ### Live Stakeholder Map
 
@@ -32,11 +26,17 @@ As the graph builds, students can inspect a live stakeholder map that connects p
 
 ![Live stakeholder map](Documentation/screenshots/live-stakeholder-map.png)
 
-### Detailed Progress Tracking
+### Explore Theses
 
-The progress panels make long-running background work legible by exposing the current step, latest update, and which part of the simulation comes next.
+Once the simulation finishes, the student can browse thesis paths with concrete reasons, likely outcomes, and company or domain context.
 
-![Simulation progress detail](Documentation/screenshots/simulation-progress-detail.png)
+![Explore thesis list](Documentation/screenshots/explore-thesis-list.png)
+
+### Ask Your Future Self
+
+Each thesis path opens into a future-self view where the student can inspect the long-term arc and ask grounded follow-up questions.
+
+![Future self detail](Documentation/screenshots/future-self-detail.png)
 
 ## What Is Active In This Repo?
 
