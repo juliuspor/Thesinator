@@ -185,8 +185,20 @@ echo ""
 echo "Press Ctrl+C to stop the local app processes."
 
 set +e
-wait -n "${FUNCTIONS_PID}" "${PROXY_PID}" "${MIROFISH_BACKEND_PID}" "${THESIS_FRONTEND_PID}"
-EXIT_CODE=$?
+# macOS ships Bash 3.2, which does not support `wait -n`.
+# Poll tracked services and wait on the first one that exits.
+PIDS=("${FUNCTIONS_PID}" "${PROXY_PID}" "${MIROFISH_BACKEND_PID}" "${THESIS_FRONTEND_PID}")
+EXIT_CODE=0
+while true; do
+  for pid in "${PIDS[@]}"; do
+    if [[ -n "${pid}" ]] && ! kill -0 "${pid}" 2>/dev/null; then
+      wait "${pid}"
+      EXIT_CODE=$?
+      break 2
+    fi
+  done
+  sleep 1
+done
 set -e
 
 echo "A service exited unexpectedly. Shutting down the rest..."
