@@ -1,5 +1,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.8";
 
+type PinnedItem = {
+  id: string;
+  questionId: number;
+  text: string;
+  pinnedAt: string;
+};
+
 type ContextSnapshot = {
   goal_type: string | null;
   target_industry: string[];
@@ -13,6 +20,7 @@ type ContextSnapshot = {
   existing_ideas: string[];
   refined_interests: string[];
   depth_preference: string | null;
+  pinned_items: PinnedItem[];
 };
 
 type TopTopicRow = {
@@ -236,6 +244,7 @@ const DEFAULT_CONTEXT_SNAPSHOT: ContextSnapshot = {
   existing_ideas: [],
   refined_interests: [],
   depth_preference: null,
+  pinned_items: [],
 };
 
 const FIXED_SCENARIO_PROMPT =
@@ -470,6 +479,17 @@ const coerceSnapshot = (value: unknown): ContextSnapshot => {
     existing_ideas: normalizeStringArray(source.existing_ideas),
     refined_interests: normalizeStringArray(source.refined_interests),
     depth_preference: trimString(source.depth_preference),
+    pinned_items: Array.isArray(source.pinned_items)
+      ? (source.pinned_items as PinnedItem[]).filter(
+          (item) =>
+            item &&
+            typeof item === "object" &&
+            typeof item.id === "string" &&
+            typeof item.questionId === "number" &&
+            typeof item.text === "string" &&
+            typeof item.pinnedAt === "string",
+        )
+      : [],
   };
 };
 

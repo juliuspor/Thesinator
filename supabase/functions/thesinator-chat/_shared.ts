@@ -1,5 +1,12 @@
 export type InputMode = "mcq" | "text" | "speech";
 
+export type PinnedItem = {
+  id: string;
+  questionId: number;
+  text: string;
+  pinnedAt: string;
+};
+
 export type ContextSnapshot = {
   goal_type: string | null;
   target_industry: string[];
@@ -13,6 +20,7 @@ export type ContextSnapshot = {
   existing_ideas: string[];
   refined_interests: string[];
   depth_preference: string | null;
+  pinned_items: PinnedItem[];
 };
 
 export const DEFAULT_CONTEXT_SNAPSHOT: ContextSnapshot = {
@@ -28,6 +36,7 @@ export const DEFAULT_CONTEXT_SNAPSHOT: ContextSnapshot = {
   existing_ideas: [],
   refined_interests: [],
   depth_preference: null,
+  pinned_items: [],
 };
 
 export type ThesinatorQuestion = {
@@ -103,6 +112,25 @@ const normalizeDuration = (value: unknown): number | null => {
   return null;
 };
 
+const normalizePinnedItems = (value: unknown): PinnedItem[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is PinnedItem => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+    const candidate = item as Record<string, unknown>;
+    return (
+      typeof candidate.id === "string" &&
+      typeof candidate.questionId === "number" &&
+      typeof candidate.text === "string" &&
+      typeof candidate.pinnedAt === "string"
+    );
+  });
+};
+
 export const sanitizeSnapshotPatch = (patch: unknown): Partial<ContextSnapshot> => {
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
     return {};
@@ -159,6 +187,10 @@ export const sanitizeSnapshotPatch = (patch: unknown): Partial<ContextSnapshot> 
     out.depth_preference = trimString(source.depth_preference);
   }
 
+  if (source.pinned_items !== undefined) {
+    out.pinned_items = normalizePinnedItems(source.pinned_items);
+  }
+
   return out;
 };
 
@@ -172,6 +204,7 @@ const coerceSnapshot = (value: unknown): ContextSnapshot => {
     preferred_cities: patch.preferred_cities ?? DEFAULT_CONTEXT_SNAPSHOT.preferred_cities,
     existing_ideas: patch.existing_ideas ?? DEFAULT_CONTEXT_SNAPSHOT.existing_ideas,
     refined_interests: patch.refined_interests ?? DEFAULT_CONTEXT_SNAPSHOT.refined_interests,
+    pinned_items: patch.pinned_items ?? DEFAULT_CONTEXT_SNAPSHOT.pinned_items,
   };
 };
 
@@ -186,6 +219,7 @@ export const mergeContextSnapshot = (existing: unknown, patch: unknown): Context
     preferred_cities: cleanPatch.preferred_cities ?? base.preferred_cities,
     existing_ideas: cleanPatch.existing_ideas ?? base.existing_ideas,
     refined_interests: cleanPatch.refined_interests ?? base.refined_interests,
+    pinned_items: cleanPatch.pinned_items ?? base.pinned_items,
   };
 };
 

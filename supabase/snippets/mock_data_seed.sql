@@ -1539,24 +1539,6 @@ on conflict (source_id) do update set
 insert into public.thesis_projects (
   source_id, title, description, motivation, state, student_id, topic_id, company_id, university_id, created_at, updated_at
 ) values (
-  'project-04', 'Applying Federated Learning to Telecom Network Optimization', 'Investigating privacy-preserving machine learning approaches for mobile network resource allocation at Swisscom.', 'I am fascinated by the challenge of training ML models without centralizing sensitive user data and see Swiss telecom as the ideal testing ground.', 'applied',
-  (select id from public.students where source_id = 'student-01'), (select id from public.topics where source_id = 'topic-07'), (select id from public.companies where source_id = 'company-04'), (select id from public.universities where source_id = 'uni-01'), '2026-02-10T11:00:00Z'::timestamptz, '2026-02-18T16:45:00Z'::timestamptz
-)
-on conflict (source_id) do update set
-  title = excluded.title,
-  description = excluded.description,
-  motivation = excluded.motivation,
-  state = excluded.state,
-  student_id = excluded.student_id,
-  topic_id = excluded.topic_id,
-  company_id = excluded.company_id,
-  university_id = excluded.university_id,
-  created_at = excluded.created_at,
-  updated_at = excluded.updated_at;
-
-insert into public.thesis_projects (
-  source_id, title, description, motivation, state, student_id, topic_id, company_id, university_id, created_at, updated_at
-) values (
   'project-05', 'Digital Health Pipeline for Wearable-Based Clinical Endpoints', 'Building a data ingestion and analysis pipeline for consumer wearable data to support decentralized clinical trials at Roche.', 'My background in data science and interest in healthcare make this the perfect intersection of my skills and career goals.', 'applied',
   (select id from public.students where source_id = 'student-30'), (select id from public.topics where source_id = 'topic-04'), (select id from public.companies where source_id = 'company-02'), (select id from public.universities where source_id = 'uni-08'), '2026-01-20T09:30:00Z'::timestamptz, '2026-02-05T14:00:00Z'::timestamptz
 )

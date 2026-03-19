@@ -2067,24 +2067,6 @@ on conflict (source_id) do update set
 insert into public.thesis_projects (
   source_id, title, description, motivation, state, student_id, topic_id, company_id, university_id, created_at, updated_at
 ) values (
-  'project-04', 'Applying Federated Learning to Telecom Network Optimization', 'Investigating privacy-preserving machine learning approaches for mobile network resource allocation at Swisscom.', 'I am fascinated by the challenge of training ML models without centralizing sensitive user data and see Swiss telecom as the ideal testing ground.', 'applied',
-  (select id from public.students where source_id = 'student-01'), (select id from public.topics where source_id = 'topic-07'), (select id from public.companies where source_id = 'company-04'), (select id from public.universities where source_id = 'uni-01'), '2026-02-10T11:00:00Z'::timestamptz, '2026-02-18T16:45:00Z'::timestamptz
-)
-on conflict (source_id) do update set
-  title = excluded.title,
-  description = excluded.description,
-  motivation = excluded.motivation,
-  state = excluded.state,
-  student_id = excluded.student_id,
-  topic_id = excluded.topic_id,
-  company_id = excluded.company_id,
-  university_id = excluded.university_id,
-  created_at = excluded.created_at,
-  updated_at = excluded.updated_at;
-
-insert into public.thesis_projects (
-  source_id, title, description, motivation, state, student_id, topic_id, company_id, university_id, created_at, updated_at
-) values (
   'project-05', 'Digital Health Pipeline for Wearable-Based Clinical Endpoints', 'Building a data ingestion and analysis pipeline for consumer wearable data to support decentralized clinical trials at Roche.', 'My background in data science and interest in healthcare make this the perfect intersection of my skills and career goals.', 'applied',
   (select id from public.students where source_id = 'student-30'), (select id from public.topics where source_id = 'topic-04'), (select id from public.companies where source_id = 'company-02'), (select id from public.universities where source_id = 'uni-08'), '2026-01-20T09:30:00Z'::timestamptz, '2026-02-05T14:00:00Z'::timestamptz
 )
@@ -2433,4 +2415,133 @@ begin
   select count(*) into v_count from public.project_experts;
   if v_count <> 4 then raise exception 'seed check failed: project_experts %, expected 4', v_count; end if;
 end;
+$$;
+
+-- ================================================================
+-- Denormalize: populate flat columns + flat tables for frontend
+-- (runs after all normalized seed data is in place)
+-- ================================================================
+
+-- topics.company_name ← companies.name
+UPDATE topics t SET company_name = c.name
+FROM companies c WHERE t.company_id = c.id AND t.company_id IS NOT NULL;
+
+-- topics.university_name ← universities.name
+UPDATE topics t SET university_name = u.name
+FROM universities u WHERE t.university_id = u.id AND t.university_id IS NOT NULL;
+
+-- topics.field_ids
+UPDATE topics t SET field_ids = sub.fids
+FROM (
+  SELECT tf.topic_id, array_agg(tf.field_id ORDER BY f.name) AS fids
+  FROM topic_fields tf JOIN fields f ON f.id = tf.field_id
+  GROUP BY tf.topic_id
+) sub WHERE t.id = sub.topic_id;
+
+-- topics.field_names
+UPDATE topics t SET field_names = sub.fnames
+FROM (
+  SELECT tf.topic_id, array_agg(f.name ORDER BY f.name) AS fnames
+  FROM topic_fields tf JOIN fields f ON f.id = tf.field_id
+  GROUP BY tf.topic_id
+) sub WHERE t.id = sub.topic_id;
+
+-- supervisors.university_name
+UPDATE supervisors s SET university_name = u.name
+FROM universities u WHERE s.university_id = u.id;
+
+-- supervisors.field_ids
+UPDATE supervisors s SET field_ids = sub.fids
+FROM (
+  SELECT sf.supervisor_id, array_agg(sf.field_id ORDER BY f.name) AS fids
+  FROM supervisor_fields sf JOIN fields f ON f.id = sf.field_id
+  GROUP BY sf.supervisor_id
+) sub WHERE s.id = sub.supervisor_id;
+
+-- supervisors.field_names
+UPDATE supervisors s SET field_names = sub.fnames
+FROM (
+  SELECT sf.supervisor_id, array_agg(f.name ORDER BY f.name) AS fnames
+  FROM supervisor_fields sf JOIN fields f ON f.id = sf.field_id
+  GROUP BY sf.supervisor_id
+) sub WHERE s.id = sub.supervisor_id;
+
+-- supervisors.expertise ← about
+UPDATE supervisors SET expertise = about WHERE about IS NOT NULL;
+
+-- experts.company_name
+UPDATE experts e SET company_name = c.name
+FROM companies c WHERE e.company_id = c.id;
+
+-- experts.field_ids
+UPDATE experts e SET field_ids = sub.fids
+FROM (
+  SELECT ef.expert_id, array_agg(ef.field_id ORDER BY f.name) AS fids
+  FROM expert_fields ef JOIN fields f ON f.id = ef.field_id
+  GROUP BY ef.expert_id
+) sub WHERE e.id = sub.expert_id;
+
+-- experts.expertise ← title
+UPDATE experts SET expertise = title WHERE title IS NOT NULL;
+
+-- companies.topic_count
+UPDATE companies c SET topic_count = sub.cnt
+FROM (
+  SELECT company_id, count(*) AS cnt FROM topics
+  WHERE company_id IS NOT NULL GROUP BY company_id
+) sub WHERE c.id = sub.company_id;
+
+-- people: 25 supervisors
+INSERT INTO people (id, type, first_name, last_name, title, institution_name,
+  institution_type, about, research_interests, objectives, offer_interviews, field_ids, field_names)
+SELECT s.id, 'supervisor', s.first_name, s.last_name, s.title, u.name, 'university',
+  COALESCE(s.about, ''), s.research_interests, s.objectives, false,
+  COALESCE((SELECT array_agg(sf.field_id ORDER BY f.name) FROM supervisor_fields sf JOIN fields f ON f.id = sf.field_id WHERE sf.supervisor_id = s.id), '{}'::uuid[]),
+  COALESCE((SELECT array_agg(f.name ORDER BY f.name) FROM supervisor_fields sf JOIN fields f ON f.id = sf.field_id WHERE sf.supervisor_id = s.id), '{}'::text[])
+FROM supervisors s JOIN universities u ON u.id = s.university_id
+ON CONFLICT (id) DO NOTHING;
+
+-- people: 30 experts
+INSERT INTO people (id, type, first_name, last_name, title, institution_name,
+  institution_type, about, research_interests, objectives, offer_interviews, field_ids, field_names)
+SELECT e.id, 'expert', e.first_name, e.last_name, e.title, c.name, 'company',
+  COALESCE(e.about, ''), '{}'::text[], e.objectives, COALESCE(e.offer_interviews, false),
+  COALESCE((SELECT array_agg(ef.field_id ORDER BY f.name) FROM expert_fields ef JOIN fields f ON f.id = ef.field_id WHERE ef.expert_id = e.id), '{}'::uuid[]),
+  COALESCE((SELECT array_agg(f.name ORDER BY f.name) FROM expert_fields ef JOIN fields f ON f.id = ef.field_id WHERE ef.expert_id = e.id), '{}'::text[])
+FROM experts e JOIN companies c ON c.id = e.company_id
+ON CONFLICT (id) DO NOTHING;
+
+-- projects: 15 rows from thesis_projects
+INSERT INTO projects (id, title, description, motivation, state, student_id,
+  topic_id, topic_title, company_name, university_name,
+  supervisor_names, expert_names, created_at, updated_at)
+SELECT tp.id, tp.title, tp.description, tp.motivation, tp.state,
+  st.source_id, tp.topic_id, t.title,
+  c.name, u.name,
+  COALESCE((SELECT array_agg(sv.first_name || ' ' || sv.last_name) FROM project_supervisors ps JOIN supervisors sv ON sv.id = ps.supervisor_id WHERE ps.project_id = tp.id), '{}'::text[]),
+  COALESCE((SELECT array_agg(ex.first_name || ' ' || ex.last_name) FROM project_experts pe JOIN experts ex ON ex.id = pe.expert_id WHERE pe.project_id = tp.id), '{}'::text[]),
+  tp.created_at, tp.updated_at
+FROM thesis_projects tp
+LEFT JOIN students st ON st.id = tp.student_id
+LEFT JOIN topics t ON t.id = tp.topic_id
+LEFT JOIN companies c ON c.id = tp.company_id
+LEFT JOIN universities u ON u.id = tp.university_id
+ON CONFLICT (id) DO NOTHING;
+
+-- Verify denormalized data
+DO $$
+DECLARE v_count integer;
+BEGIN
+  SELECT count(*) INTO v_count FROM people;
+  IF v_count <> 55 THEN RAISE EXCEPTION 'seed check failed: people %, expected 55', v_count; END IF;
+
+  SELECT count(*) INTO v_count FROM projects;
+  IF v_count <> 15 THEN RAISE EXCEPTION 'seed check failed: projects %, expected 15', v_count; END IF;
+
+  SELECT count(*) INTO v_count FROM topics WHERE field_names != '{}';
+  IF v_count < 50 THEN RAISE EXCEPTION 'seed check failed: topics with field_names %, expected >= 50', v_count; END IF;
+
+  SELECT count(*) INTO v_count FROM companies WHERE topic_count > 0;
+  IF v_count < 10 THEN RAISE EXCEPTION 'seed check failed: companies with topic_count %, expected >= 10', v_count; END IF;
+END;
 $$;

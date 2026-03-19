@@ -7,7 +7,7 @@ import {
   isInputMode,
   mergeContextSnapshot,
 } from "./_shared.ts";
-import type { ContextSnapshot, InputMode, ThesinatorQuestion } from "./_shared.ts";
+import type { ContextSnapshot, InputMode, PinnedItem, ThesinatorQuestion } from "./_shared.ts";
 
 type StartRequest = {
   action: "start";
@@ -31,6 +31,13 @@ type CompleteRequest = {
     user_answer: string;
     input_mode: InputMode;
   }>;
+};
+
+type PinRequest = {
+  action: "pin";
+  session_id: string;
+  client_token?: string | null;
+  pinned_items: PinnedItem[];
 };
 
 type TopTopicsRequest = {
@@ -1080,6 +1087,43 @@ const handleTopTopics = async (req: Request, body: TopTopicsRequest) => {
   });
 };
 
+const handlePin = async (req: Request, body: PinRequest) => {
+  const { adminClient, userId } = await getClients(req);
+
+  if (!body.session_id || typeof body.session_id !== "string") {
+    return errorResponse(400, "session_id is required.");
+  }
+
+  if (!Array.isArray(body.pinned_items)) {
+    return errorResponse(400, "pinned_items must be an array.");
+  }
+
+  const session = await loadSessionById(adminClient, body.session_id);
+  if (!session) {
+    return errorResponse(404, "Session not found.");
+  }
+
+  const ownershipError = enforceSessionOwnership(session, userId, body.client_token ?? null);
+  if (ownershipError) {
+    return errorResponse(403, ownershipError);
+  }
+
+  const merged = mergeContextSnapshot(session.context_snapshot, {
+    pinned_items: body.pinned_items,
+  });
+
+  const { error: updateError } = await adminClient
+    .from("thesinator_sessions")
+    .update({ context_snapshot: merged })
+    .eq("id", session.id);
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+
+  return json(200, { ok: true, pinned_items: merged.pinned_items });
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -1089,9 +1133,9 @@ Deno.serve(async (req) => {
     return errorResponse(405, "Method not allowed. Use POST.");
   }
 
-  let body: StartRequest | TurnRequest | CompleteRequest | TopTopicsRequest;
+  let body: StartRequest | TurnRequest | CompleteRequest | PinRequest | TopTopicsRequest;
   try {
-    body = (await req.json()) as StartRequest | TurnRequest | CompleteRequest | TopTopicsRequest;
+    body = (await req.json()) as StartRequest | TurnRequest | CompleteRequest | PinRequest | TopTopicsRequest;
   } catch {
     return errorResponse(400, "Invalid JSON payload.");
   }
@@ -1110,11 +1154,15 @@ Deno.serve(async (req) => {
       return await handleComplete(req, body);
     }
 
+    if (body.action === "pin") {
+      return await handlePin(req, body);
+    }
+
     if (body.action === "top_topics") {
       return await handleTopTopics(req, body);
     }
 
-    return errorResponse(400, "Invalid action. Use 'start', 'turn', 'complete', or 'top_topics'.");
+    return errorResponse(400, "Invalid action. Use 'start', 'turn', 'complete', 'pin', or 'top_topics'.");
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
     return errorResponse(500, message);

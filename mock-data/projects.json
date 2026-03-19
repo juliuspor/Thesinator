@@ -45,21 +45,6 @@
     "updatedAt": "2026-03-10T09:00:00Z"
   },
   {
-    "id": "project-04",
-    "title": "Applying Federated Learning to Telecom Network Optimization",
-    "description": "Investigating privacy-preserving machine learning approaches for mobile network resource allocation at Swisscom.",
-    "motivation": "I am fascinated by the challenge of training ML models without centralizing sensitive user data and see Swiss telecom as the ideal testing ground.",
-    "state": "applied",
-    "studentId": "student-01",
-    "topicId": "topic-07",
-    "companyId": "company-04",
-    "universityId": "uni-01",
-    "supervisorIds": [],
-    "expertIds": [],
-    "createdAt": "2026-02-10T11:00:00Z",
-    "updatedAt": "2026-02-18T16:45:00Z"
-  },
-  {
     "id": "project-05",
     "title": "Digital Health Pipeline for Wearable-Based Clinical Endpoints",
     "description": "Building a data ingestion and analysis pipeline for consumer wearable data to support decentralized clinical trials at Roche.",

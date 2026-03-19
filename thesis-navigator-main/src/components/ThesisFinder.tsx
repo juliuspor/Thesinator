@@ -24,9 +24,12 @@ import {
   Mic,
   MicOff,
   Network,
+  Pencil,
+  Pin,
   Send,
   Sparkles,
   Users,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,11 +55,13 @@ import {
 import { LiveFuturePathGraph } from "@/components/LiveFuturePathGraph";
 import {
   fetchThesinatorTopTopics,
+  pinThesinatorItems,
   sendThesinatorTurn,
   startThesinatorSession,
   type ContextSnapshot,
   type InputMode,
   type MatchingMeta,
+  type PinnedItem,
   type TopTopicResult,
   type ThesinatorQuestion as BackendQuestion,
 } from "@/services/thesinator";
@@ -81,6 +86,7 @@ type CompletedDiscoverPayload = {
   contextSnapshot: ContextSnapshot | null;
   topTopics: TopTopicResult[];
   matchingMeta: MatchingMeta | null;
+  pinnedItems: PinnedItem[];
 };
 
 type ConversationTurn = {
@@ -1112,11 +1118,103 @@ const SuggestedPromptButtons = ({
   </div>
 );
 
+const PinnedItemsSummary = ({
+  pinnedItems,
+  onUnpin,
+  onEdit,
+}: {
+  pinnedItems: PinnedItem[];
+  onUnpin: (id: string) => void;
+  onEdit?: (id: string, newText: string) => void;
+}) => {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+
+  if (pinnedItems.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-[1.75rem] border border-pink-300 bg-pink-50/50 p-5 shadow-sm">
+      <div className="flex items-center gap-2 mb-4">
+        <Pin size={16} className="text-pink-500 fill-current" />
+        <p className="ds-label text-pink-700">Pinned insights</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {pinnedItems.map((item) => (
+          <div
+            key={item.id}
+            className="rounded-2xl border border-pink-300 bg-white px-4 py-3 shadow-sm"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="ds-caption text-pink-600">Q{item.questionId}</p>
+              <div className="flex gap-1">
+                {onEdit && editingId !== item.id && (
+                  <button
+                    onClick={() => {
+                      setEditingId(item.id);
+                      setEditText(item.text);
+                    }}
+                    className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-pink-100 hover:text-pink-600"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                )}
+                <button
+                  onClick={() => onUnpin(item.id)}
+                  className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-pink-100 hover:text-pink-600"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+            {editingId === item.id && onEdit ? (
+              <div className="mt-2 space-y-2">
+                <textarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  className="w-full rounded-lg border border-pink-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-pink-300"
+                  rows={3}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="rounded-full"
+                    onClick={() => {
+                      onEdit(item.id, editText);
+                      setEditingId(null);
+                    }}
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="rounded-full"
+                    onClick={() => setEditingId(null)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-1.5 text-sm leading-5 text-foreground">{item.text}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const DiscoverStage = ({
   summary,
   isCreatingFutureSession,
   onCreateFutureSession,
   onComplete,
+  pinnedItems,
+  onUnpin,
+  onEditPin,
   restoredThesinatorState,
   onThesinatorStateChange,
 }: {
@@ -1124,11 +1222,15 @@ const DiscoverStage = ({
   isCreatingFutureSession: boolean;
   onCreateFutureSession: () => void;
   onComplete: (payload: CompletedDiscoverPayload) => void;
+  pinnedItems: PinnedItem[];
+  onUnpin: (id: string) => void;
+  onEditPin: (id: string, newText: string) => void;
   restoredThesinatorState: ThesinatorStorageState | null;
   onThesinatorStateChange: (state: ThesinatorStorageState) => void;
 }) => (
   <div className="space-y-8">
     <div className="space-y-5">
+      {summary && <PinnedItemsSummary pinnedItems={pinnedItems} onUnpin={onUnpin} onEdit={onEditPin} />}
       {summary && (
         <div className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
           <div className="flex items-center gap-2">
@@ -1186,6 +1288,9 @@ const BuildFutureStage = ({
   finalization,
   matchingNote,
   onContinue,
+  pinnedItems,
+  onUnpin,
+  onEditPin,
 }: {
   futureSession: FutureSessionState;
   graphBuild: FutureSessionState["graph_build"];
@@ -1193,6 +1298,9 @@ const BuildFutureStage = ({
   finalization: FutureViewState["finalization"];
   matchingNote: string | null;
   onContinue: () => void;
+  pinnedItems: PinnedItem[];
+  onUnpin: (id: string) => void;
+  onEditPin: (id: string, newText: string) => void;
 }) => {
   const canRevealTheses = futureSession.matched_futures.length > 0 && finalization.status === "ready";
   const copy = getFutureBuildCopy(graphBuild, swarm, finalization);
@@ -1200,6 +1308,7 @@ const BuildFutureStage = ({
 
   return (
     <div className="space-y-8">
+      <PinnedItemsSummary pinnedItems={pinnedItems} onUnpin={onUnpin} onEdit={onEditPin} />
       <div className="rounded-[2rem] border border-border bg-card px-6 py-8 shadow-sm">
         <p className="ds-caption uppercase tracking-[0.18em] text-muted-foreground">Simulate your future</p>
         <h2 className="ds-title-lg mt-3 text-foreground">{copy.title}</h2>
@@ -1253,6 +1362,9 @@ const ExploreStage = ({
   onOpenFuture,
   generatedExpanded,
   onToggleGenerated,
+  pinnedItems,
+  onUnpin,
+  onEditPin,
 }: {
   futureSession: FutureSessionState;
   futureView: FutureViewState | null;
@@ -1260,6 +1372,9 @@ const ExploreStage = ({
   onOpenFuture: (futureId: string) => void;
   generatedExpanded: boolean;
   onToggleGenerated: () => void;
+  pinnedItems: PinnedItem[];
+  onUnpin: (id: string) => void;
+  onEditPin: (id: string, newText: string) => void;
 }) => {
   const savedFutures = futureSession.futures.filter((future) =>
     futureSession.saved_future_ids.includes(future.future_id),
@@ -1274,6 +1389,7 @@ const ExploreStage = ({
 
   return (
     <div className="space-y-8">
+      <PinnedItemsSummary pinnedItems={pinnedItems} onUnpin={onUnpin} onEdit={onEditPin} />
       <div className="rounded-[2rem] border border-border bg-card px-6 py-8 shadow-sm">
         <p className="ds-caption uppercase tracking-[0.18em] text-muted-foreground">Explore theses</p>
         <h2 className="ds-title-lg mt-3 text-foreground">Choose a thesis to explore</h2>
@@ -1354,6 +1470,9 @@ const FutureDetailStage = ({
   chatInput,
   onChatInputChange,
   isChatSending,
+  pinnedItems,
+  onUnpin,
+  onEditPin,
 }: {
   future: FutureCard;
   detailResponse: FutureDetailResponse | null;
@@ -1366,6 +1485,9 @@ const FutureDetailStage = ({
   chatInput: string;
   onChatInputChange: (value: string) => void;
   isChatSending: boolean;
+  pinnedItems: PinnedItem[];
+  onUnpin: (id: string) => void;
+  onEditPin: (id: string, newText: string) => void;
 }) => {
   const detail = detailResponse?.future_detail;
   const mapNodes = detailResponse?.map_nodes ?? [];
@@ -1379,6 +1501,7 @@ const FutureDetailStage = ({
   const swarmRisks = (swarmImpact?.risks ?? []).filter((risk) => risk.trim().length > 0).slice(0, 3);
   const chatHistory = detailResponse?.chat_history ?? [];
   const [isThesisExpanded, setIsThesisExpanded] = useState(false);
+  const [isPinsExpanded, setIsPinsExpanded] = useState(false);
 
   return (
     <div className="space-y-8">
@@ -1392,6 +1515,27 @@ const FutureDetailStage = ({
           {future.saved ? "Saved" : "Save thesis"}
         </Button>
       </div>
+
+      {pinnedItems.length > 0 && (
+        <Collapsible open={isPinsExpanded} onOpenChange={setIsPinsExpanded}>
+          <CollapsibleTrigger asChild>
+            <button className="flex w-full items-center gap-2 rounded-2xl border border-pink-300 bg-pink-50/50 px-4 py-3 text-left transition-colors hover:bg-pink-50">
+              <Pin size={14} className="text-pink-500 fill-current" />
+              <span className="ds-label text-pink-700">Pinned insights</span>
+              <span className="ds-caption text-pink-400 ml-1">({pinnedItems.length})</span>
+              <ChevronDown
+                size={14}
+                className={`ml-auto text-pink-400 transition-transform ${isPinsExpanded ? "rotate-180" : ""}`}
+              />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-2">
+              <PinnedItemsSummary pinnedItems={pinnedItems} onUnpin={onUnpin} onEdit={onEditPin} />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
 
       <section className="rounded-[2rem] border border-primary/20 bg-gradient-to-br from-primary/10 via-background to-background p-6 shadow-sm">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -1813,6 +1957,18 @@ const StepGenieChat = ({
   const activeQuestion = activeTurn?.question ?? null;
   const answeredTurns = turns.filter((turn) => turn.userAnswer !== null);
 
+  const togglePin = useCallback((questionId: number) => {
+    setPinnedTurnIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(questionId)) {
+        next.delete(questionId);
+      } else {
+        next.add(questionId);
+      }
+      return next;
+    });
+  }, []);
+
   const playAudio = useCallback((audioBase64: string | null) => {
     if (!audioBase64) {
       setIsSpeaking(false);
@@ -1995,12 +2151,33 @@ const StepGenieChat = ({
           setIsComplete(true);
           setFinalAssistantMessage(result.assistant_reply);
           setContextSnapshot(result.context_snapshot ?? null);
+
+          const builtPinnedItems: PinnedItem[] = nextTurns
+            .filter((turn) => turn.userAnswer && pinnedTurnIds.has(turn.question.id))
+            .map((turn) => ({
+              id: crypto.randomUUID(),
+              questionId: turn.question.id,
+              text: turn.assistantMessage,
+              pinnedAt: new Date().toISOString(),
+            }));
+
           onComplete({
             sessionId: result.session_id,
             clientToken: result.client_token ?? clientToken,
             contextSnapshot: result.context_snapshot ?? null,
             topTopics: completionTopics,
             matchingMeta: result.matching_meta ?? null,
+            pinnedItems: builtPinnedItems,
+          });
+
+          reportState({
+            sessionId: result.session_id,
+            clientToken: result.client_token ?? clientToken,
+            turns: nextTurns,
+            currentQuestionIndex: result.question_index,
+            finalAssistantMessage: result.assistant_reply,
+            contextSnapshot: result.context_snapshot ?? null,
+            isComplete: true,
           });
 
           reportState({
@@ -2046,7 +2223,7 @@ const StepGenieChat = ({
         setIsSubmitting(false);
       }
     },
-    [activeQuestion, clientToken, currentQuestionIndex, isComplete, isSubmitting, onComplete, playAudio, questions, reportState, sessionId, turns],
+    [activeQuestion, clientToken, currentQuestionIndex, isComplete, isSubmitting, onComplete, pinnedTurnIds, playAudio, questions, reportState, sessionId, turns],
   );
 
   const captureSpeechTranscript = useCallback(
@@ -2114,20 +2291,40 @@ const StepGenieChat = ({
           <div className="space-y-4">
             {answeredTurns.length > 0 && (
               <div className="flex flex-wrap gap-2">
-                {answeredTurns.map((turn) => (
-                  <div
-                    key={`answer-${turn.question.id}`}
-                    className="min-w-[180px] rounded-2xl border border-border bg-background px-3 py-2.5"
-                  >
-                    <p className="ds-caption text-muted-foreground">Q{turn.question.id}</p>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      {compactText(turn.question.question, 58)}
-                    </p>
-                    <p className="mt-1.5 text-sm font-semibold text-foreground">
-                      {compactText(turn.userAnswer?.text ?? "", 40)}
-                    </p>
-                  </div>
-                ))}
+                {answeredTurns.map((turn) => {
+                  const isPinned = pinnedTurnIds.has(turn.question.id);
+                  return (
+                    <div
+                      key={`answer-${turn.question.id}`}
+                      className={`min-w-[180px] rounded-2xl border px-3 py-2.5 transition-colors ${
+                        isPinned
+                          ? "border-pink-400 bg-pink-50"
+                          : "border-border bg-background"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-1">
+                        <p className="ds-caption text-muted-foreground">Q{turn.question.id}</p>
+                        <button
+                          onClick={() => togglePin(turn.question.id)}
+                          className={`rounded-full p-1 transition-colors ${
+                            isPinned
+                              ? "text-pink-500 hover:bg-pink-100"
+                              : "text-muted-foreground hover:bg-accent"
+                          }`}
+                          title={isPinned ? "Unpin this insight" : "Pin this insight"}
+                        >
+                          <Pin size={14} className={isPinned ? "fill-current" : ""} />
+                        </button>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        {compactText(turn.assistantMessage, 58)}
+                      </p>
+                      <p className="mt-1.5 text-sm font-semibold text-foreground">
+                        {compactText(turn.userAnswer?.text ?? "", 40)}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -2286,6 +2483,7 @@ const ThesisFinder = () => {
   const [isChatSending, setIsChatSending] = useState(false);
   const [isGeneratedExpanded, setIsGeneratedExpanded] = useState(false);
   const [chatInput, setChatInput] = useState("");
+  const [pinnedItems, setPinnedItems] = useState<PinnedItem[]>([]);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [thesinatorState, setThesinatorState] = useState<ThesinatorStorageState | null>(null);
   const [thesinatorStateLoaded, setThesinatorStateLoaded] = useState(false);
@@ -2322,6 +2520,7 @@ const ThesisFinder = () => {
     const storedDiscoverSummary = readDiscoverSummaryStorage();
     if (storedDiscoverSummary) {
       setDiscoverSummary(storedDiscoverSummary);
+      setPinnedItems(storedDiscoverSummary.pinnedItems);
     }
 
     setThesinatorStateLoaded(true);
@@ -2458,8 +2657,29 @@ const ThesisFinder = () => {
 
   const handleDiscoverComplete = useCallback((payload: CompletedDiscoverPayload) => {
     setDiscoverSummary(payload);
+    setPinnedItems(payload.pinnedItems);
     setScreenError(null);
     writeDiscoverSummaryStorage(payload);
+
+    if (payload.pinnedItems.length > 0) {
+      void pinThesinatorItems({
+        sessionId: payload.sessionId,
+        clientToken: payload.clientToken,
+        pinnedItems: payload.pinnedItems,
+      }).catch((err) => {
+        console.error("Failed to persist pinned items:", err);
+      });
+    }
+  }, []);
+
+  const handleUnpin = useCallback((id: string) => {
+    setPinnedItems((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const handleEditPin = useCallback((id: string, newText: string) => {
+    setPinnedItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, text: newText } : item)),
+    );
   }, []);
 
   const handleCreateSession = useCallback(async () => {
@@ -2745,6 +2965,9 @@ const ThesisFinder = () => {
                 isCreatingFutureSession={isCreatingFutureSession}
                 onCreateFutureSession={handleCreateSession}
                 onComplete={handleDiscoverComplete}
+                pinnedItems={pinnedItems}
+                onUnpin={handleUnpin}
+                onEditPin={handleEditPin}
                 restoredThesinatorState={thesinatorState}
                 onThesinatorStateChange={handleThesinatorStateChange}
               />
@@ -2758,6 +2981,9 @@ const ThesisFinder = () => {
                 finalization={currentFinalization}
                 matchingNote={matchingNote}
                 onContinue={handleContinueToExplore}
+                pinnedItems={pinnedItems}
+                onUnpin={handleUnpin}
+                onEditPin={handleEditPin}
               />
             )}
 
@@ -2769,6 +2995,9 @@ const ThesisFinder = () => {
                 onOpenFuture={handleOpenFuture}
                 generatedExpanded={isGeneratedExpanded}
                 onToggleGenerated={() => setIsGeneratedExpanded((current) => !current)}
+                pinnedItems={pinnedItems}
+                onUnpin={handleUnpin}
+                onEditPin={handleEditPin}
               />
             )}
 
@@ -2785,6 +3014,9 @@ const ThesisFinder = () => {
                 chatInput={chatInput}
                 onChatInputChange={setChatInput}
                 isChatSending={isChatSending}
+                pinnedItems={pinnedItems}
+                onUnpin={handleUnpin}
+                onEditPin={handleEditPin}
               />
             )}
           </>

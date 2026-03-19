@@ -2,6 +2,13 @@ import { hasSupabaseEnv, supabase } from "@/lib/supabase";
 
 export type InputMode = "mcq" | "text" | "speech";
 
+export type PinnedItem = {
+  id: string;
+  questionId: number;
+  text: string;
+  pinnedAt: string;
+};
+
 export type ThesinatorQuestion = {
   id: number;
   question: string;
@@ -21,6 +28,7 @@ export type ContextSnapshot = {
   existing_ideas: string[];
   refined_interests: string[];
   depth_preference: string | null;
+  pinned_items?: PinnedItem[];
 };
 
 export type StartThesinatorResponse = {
@@ -157,6 +165,32 @@ export const completeThesinatorSession = async (payload: {
   }
 
   return data;
+};
+
+export const pinThesinatorItems = async (payload: {
+  sessionId: string;
+  clientToken?: string | null;
+  pinnedItems: PinnedItem[];
+}): Promise<{ ok: boolean; pinned_items: PinnedItem[] }> => {
+  const client = requireSupabase();
+
+  const { data, error } = await client.functions.invoke<{
+    ok: boolean;
+    pinned_items: PinnedItem[];
+  }>("thesinator-chat", {
+    body: {
+      action: "pin",
+      session_id: payload.sessionId,
+      client_token: payload.clientToken ?? null,
+      pinned_items: payload.pinnedItems,
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || "Failed to pin items.");
+  }
+
+  return data ?? { ok: true, pinned_items: payload.pinnedItems };
 };
 
 const normalizeTopTopics = (data: unknown): TopTopicResult[] => {

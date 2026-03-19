@@ -1,9 +1,10 @@
-import { Home, MessageSquare, FolderOpen, Compass, Search, Users, Building2, Settings, GraduationCap, ChevronDown } from "lucide-react";
+import { Home, MessageSquare, FolderOpen, Compass, Search, Users, Building2, Settings, GraduationCap, ChevronDown, Sparkles, FileText } from "lucide-react";
 import studyondLogo from "@/assets/studyond.svg";
 
 interface AppSidebarProps {
   activeItem: string;
   onItemClick: (item: string) => void;
+  messageCount?: number;
 }
 
 const personalItems = [
@@ -15,14 +16,16 @@ const personalItems = [
 const erkundenItems = [
   { id: "themen", label: "Themen", icon: Compass },
   { id: "thesis-finder", label: "Thesis Finder", icon: GraduationCap },
+  { id: "eigene-thesis", label: "Eigene Thesis", icon: FileText },
   { id: "jobs", label: "Jobs", icon: Search },
-  { id: "personen", label: "Personen", icon: Users, hasSubmenu: true },
-  { id: "organisationen", label: "Organisationen", icon: Building2, hasSubmenu: true },
+  { id: "gini-connect", label: "Gini Connect", icon: Sparkles },
+  { id: "personen", label: "Personen", icon: Users },
+  { id: "organisationen", label: "Organisationen", icon: Building2 },
 ];
 
-const AppSidebar = ({ activeItem, onItemClick }: AppSidebarProps) => {
+const AppSidebar = ({ activeItem, onItemClick, messageCount }: AppSidebarProps) => {
   return (
-    <aside className="flex w-full flex-col justify-between border-b border-border bg-background px-3 py-4 lg:w-[240px] lg:border-b-0 lg:border-r lg:min-h-screen">
+    <aside className="flex w-full flex-col justify-between border-b border-border bg-background px-3 py-4 lg:w-[240px] lg:border-b-0 lg:border-r lg:sticky lg:top-0 lg:h-dvh lg:overflow-y-auto">
       <div>
         <div className="mb-6 px-2">
           <img src={studyondLogo} alt="Studyond" className="h-6" />
@@ -34,14 +37,21 @@ const AppSidebar = ({ activeItem, onItemClick }: AppSidebarProps) => {
             <button
               key={item.id}
               onClick={() => onItemClick(item.id)}
-              className={`flex items-center gap-3 w-full px-2 py-2 rounded-lg ds-small transition-colors duration-200 ${
+              className={`flex items-center justify-between gap-3 w-full px-2 py-2 rounded-lg ds-small transition-colors duration-200 ${
                 activeItem === item.id
                   ? "bg-accent text-accent-foreground font-medium"
                   : "text-foreground hover:bg-accent"
               }`}
             >
-              <item.icon size={18} />
-              {item.label}
+              <span className="flex items-center gap-3">
+                <item.icon size={18} />
+                {item.label}
+              </span>
+              {item.id === "nachrichten" && messageCount != null && messageCount > 0 && (
+                <span className="flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold">
+                  {messageCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
