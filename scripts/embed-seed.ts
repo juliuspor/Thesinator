@@ -6,15 +6,15 @@ type TopicRow = {
   search_document: string | null;
 };
 
-const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const supabaseUrl = Deno.env.get("LOCAL_SUPABASE_URL") ?? Deno.env.get("SUPABASE_URL") ?? "";
+const supabaseServiceRoleKey = Deno.env.get("LOCAL_SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const openAiKey = Deno.env.get("OPENAI_API_KEY") ?? "";
 const embeddingModel = Deno.env.get("OPENAI_EMBEDDING_MODEL") ?? "text-embedding-3-small";
 const forceAll = Deno.env.get("EMBED_FORCE_ALL") === "true";
 
 if (!supabaseUrl || !supabaseServiceRoleKey || !openAiKey) {
   console.error(
-    "Missing required env vars. Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY.",
+    "Missing required env vars. Set LOCAL_SUPABASE_URL/LOCAL_SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY), plus OPENAI_API_KEY.",
   );
   Deno.exit(1);
 }
