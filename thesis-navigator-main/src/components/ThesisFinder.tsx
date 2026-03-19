@@ -34,6 +34,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   chatWithFutureSelf,
   createFutureSession,
@@ -60,6 +61,7 @@ import {
   type TopTopicResult,
   type ThesinatorQuestion as BackendQuestion,
 } from "@/services/thesinator";
+import { useDelayedPending } from "@/hooks/use-delayed-pending";
 import thesinatorTalk1 from "@/assets/thesinator-talk1.png";
 import thesinatorTalk2 from "@/assets/thesinator-talk2.png";
 import thesinatorThinking from "@/assets/thesinator-thinking.png";
@@ -125,6 +127,11 @@ type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 const FUTURE_SESSION_STORAGE_KEY = "starthack-active-future-session";
 const ACTIVE_FUTURE_STORAGE_KEY = "starthack-active-future-selection";
 const THESINATOR_QUESTION_COUNT = 3;
+const THESINATOR_WAIT_LINES = [
+  "Got it. I locked in your answer.",
+  "I’m lining this up with your previous choices.",
+  "I’m crafting the best next question for you.",
+] as const;
 
 const inputModeLabels: Record<InputMode, string> = {
   mcq: "MCQ",
@@ -286,23 +293,24 @@ const ThesinatorAvatar = ({ isTyping, isSpeaking }: { isTyping: boolean; isSpeak
 
   return (
     <div className="flex shrink-0 flex-col items-center">
-      <div className="animate-genie-float relative">
+      <div className="relative animate-genie-float">
+        <div className="absolute inset-0 z-0 rounded-full bg-primary/20 blur-3xl opacity-60" />
         <img
           src={currentImage}
           alt="Thesinator"
-          className="h-44 w-44 object-contain transition-opacity duration-200 sm:h-56 sm:w-56 xl:h-72 xl:w-72"
+          className="relative z-10 h-44 w-44 object-contain transition-opacity duration-200 sm:h-56 sm:w-56 xl:h-72 xl:w-72"
         />
-        <div className="absolute -top-2 -right-2 animate-sparkle">
+        <div className="absolute -top-2 -right-2 z-20 animate-sparkle">
           <Sparkles size={16} className="text-ai-from" />
         </div>
         <div
-          className="absolute -bottom-1 -left-3 animate-sparkle"
+          className="absolute -bottom-1 -left-3 z-20 animate-sparkle"
           style={{ animationDelay: "0.7s" }}
         >
           <Sparkles size={12} className="text-ai-from" />
         </div>
         <div
-          className="absolute top-4 -left-4 animate-sparkle"
+          className="absolute top-4 -left-4 z-20 animate-sparkle"
           style={{ animationDelay: "1.4s" }}
         >
           <Sparkles size={10} className="text-ai-from" />
@@ -1048,58 +1056,74 @@ const DiscoverStage = ({
   isCreatingFutureSession: boolean;
   onCreateFutureSession: () => void;
   onComplete: (payload: CompletedDiscoverPayload) => void;
-}) => (
-  <div className="space-y-8">
-    <div className="space-y-5">
-      {summary && (
-        <div className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
-          <div className="flex items-center gap-2">
-            <Check size={18} className="text-primary" />
-            <p className="ds-label text-foreground">Your thesis matches are ready</p>
-          </div>
-          <p className="ds-small mt-2 text-muted-foreground">
-            We found your best matches. Next, we show who is connected to them.
-          </p>
-          <div className="mt-5 grid gap-3 lg:grid-cols-3">
-            {summary.topTopics.slice(0, 3).map((topic) => (
-              <div key={topic.topic_id} className="rounded-2xl bg-muted/50 px-4 py-3">
-                <p className="ds-caption text-muted-foreground">Matched thesis {topic.rank}</p>
-                <p className="ds-label mt-1 text-foreground">{topic.title}</p>
-              </div>
-            ))}
-          </div>
-          {formatMatchingNote(summary.matchingMeta) && (
-            <p className="mt-4 ds-caption text-muted-foreground">{formatMatchingNote(summary.matchingMeta)}</p>
-          )}
-          <Button
-            onClick={onCreateFutureSession}
-            className="mt-6 rounded-full gap-2"
-            disabled={isCreatingFutureSession}
-          >
-            {isCreatingFutureSession ? (
-              <>
-                <LoaderCircle size={16} className="animate-spin" />
-                Loading
-              </>
-            ) : (
-              <>
-                See where it could lead <ArrowRight size={16} />
-              </>
-            )}
-          </Button>
-        </div>
-      )}
+}) => {
+  const summaryRef = useRef<HTMLDivElement>(null);
 
-      <div className="rounded-[2rem] border border-border bg-card/30 p-3 shadow-sm xl:p-4">
-        <div className="mb-3 px-2">
-          <p className="ds-caption uppercase tracking-[0.18em] text-muted-foreground">Discover</p>
-          <h2 className="ds-title-md mt-2 text-foreground">Tell us what you want</h2>
+  useEffect(() => {
+    if (summary && summaryRef.current) {
+      summaryRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [summary]);
+
+  return (
+    <div className="space-y-8">
+      <div className="space-y-5">
+        <div className="rounded-[2.5rem] border border-primary/5 bg-card/40 p-5 shadow-2xl shadow-primary/5 backdrop-blur-sm xl:p-8">
+          <div className="mb-6 px-2 text-center xl:text-left">
+            <p className="ds-caption uppercase tracking-[0.18em] text-primary/80">Discover</p>
+            <h2 className="ds-title-md mt-2 text-foreground">Build your future map</h2>
+          </div>
+          <StepGenieChat onComplete={onComplete} />
         </div>
-        <StepGenieChat onComplete={onComplete} />
+
+        {summary && (
+          <div
+            ref={summaryRef}
+            className="rounded-[2rem] border border-primary/20 bg-gradient-to-br from-primary/5 to-transparent p-6 shadow-xl backdrop-blur-md animate-in slide-in-from-bottom-4 zoom-in-95 duration-500 xl:p-8"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
+                <Check size={20} />
+              </div>
+              <p className="ds-title-cards text-foreground">Your thesis matches are ready</p>
+            </div>
+            <p className="ds-body mt-3 text-muted-foreground">
+              We mapped your choices and found your best matches. Next, see how they unfold.
+            </p>
+            <div className="mt-6 grid gap-4 lg:grid-cols-3">
+              {summary.topTopics.slice(0, 3).map((topic) => (
+                <div key={topic.topic_id} className="rounded-[1.25rem] border border-primary/10 bg-background/60 px-5 py-4 backdrop-blur-sm">
+                  <p className="ds-caption font-semibold tracking-[0.14em] text-primary">Match {topic.rank}</p>
+                  <p className="text-[0.96rem] font-medium leading-snug text-foreground mt-2">{topic.title}</p>
+                </div>
+              ))}
+            </div>
+            {formatMatchingNote(summary.matchingMeta) && (
+              <p className="mt-5 ds-caption text-muted-foreground">{formatMatchingNote(summary.matchingMeta)}</p>
+            )}
+            <Button
+              onClick={onCreateFutureSession}
+              size="lg"
+              className="mt-6 rounded-full px-8 gap-2 text-[0.96rem] shadow-md"
+              disabled={isCreatingFutureSession}
+            >
+              {isCreatingFutureSession ? (
+                <>
+                  <LoaderCircle size={18} className="animate-spin" />
+                  Loading your map
+                </>
+              ) : (
+                <>
+                  See where it could lead <ArrowRight size={18} />
+                </>
+              )}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const BuildFutureStage = ({
   futureSession,
@@ -1706,7 +1730,96 @@ const buildFallbackMapNodes = (future: FutureCard): FutureMapNode[] => {
   return nodes;
 };
 
-const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscoverPayload) => void }) => {
+const StepGenieChatSkeleton = ({ showPulse }: { showPulse: boolean }) => (
+  <div className="space-y-4" data-testid="step-genie-chat-skeleton">
+    <div className="mb-3 flex items-center gap-3">
+      <Skeleton className={`h-2 flex-1 rounded-full ${showPulse ? "" : "animate-none"}`} />
+      <Skeleton className={`h-4 w-12 rounded-full ${showPulse ? "" : "animate-none"}`} />
+    </div>
+
+    <div className="rounded-[2rem] border border-border/50 bg-card/60 p-5 shadow-lg backdrop-blur-xl">
+      <div className="space-y-5">
+        <div className="rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/5 to-transparent px-5 py-4 shadow-sm backdrop-blur-md">
+          <Skeleton className={`h-3 w-20 rounded-full ${showPulse ? "" : "animate-none"}`} />
+          <Skeleton className={`mt-3 h-4 w-full rounded-full ${showPulse ? "" : "animate-none"}`} />
+          <Skeleton className={`mt-2 h-4 w-4/5 rounded-full ${showPulse ? "" : "animate-none"}`} />
+        </div>
+
+        <div className="flex items-start gap-4">
+          <Skeleton className={`h-12 w-12 shrink-0 rounded-[1.25rem] ${showPulse ? "" : "animate-none"}`} />
+          <div className="flex-1 rounded-[1.25rem] border border-border bg-background px-5 py-3 shadow-sm">
+            <Skeleton className={`h-4 w-full rounded-full ${showPulse ? "" : "animate-none"}`} />
+            <Skeleton className={`mt-2 h-4 w-3/4 rounded-full ${showPulse ? "" : "animate-none"}`} />
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 mt-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton
+              key={`step-genie-skeleton-option-${index}`}
+              className={`h-[54px] rounded-[1.25rem] ${showPulse ? "" : "animate-none"}`}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const StepGenieTurnWaiting = ({
+  lineIndex,
+  elapsedMs,
+  showPulse,
+}: {
+  lineIndex: number;
+  elapsedMs: number;
+  showPulse: boolean;
+}) => (
+  <div
+    className="relative overflow-hidden rounded-[1.5rem] border border-primary/20 bg-gradient-to-br from-primary/5 to-transparent px-5 py-5 text-muted-foreground shadow-sm"
+    data-testid="step-genie-next-question-skeleton"
+  >
+    {showPulse && (
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-primary/5 to-transparent animate-shimmer" />
+    )}
+    <div className="relative z-10">
+      <div className="flex items-center gap-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+          <LoaderCircle size={16} className={showPulse ? "animate-spin text-primary" : "text-primary"} />
+        </div>
+        <p className="ds-caption font-semibold tracking-[0.14em] text-primary">Thinking</p>
+      </div>
+
+      <p className="mt-3 ds-body text-foreground transition-opacity duration-500">{THESINATOR_WAIT_LINES[lineIndex]}</p>
+
+      <div className="mt-4 rounded-xl border border-primary/10 bg-background/50 px-4 py-4 backdrop-blur">
+        <div className="flex items-center gap-2">
+          <Skeleton className={`h-2 w-2 rounded-full bg-primary/30 ${showPulse ? "" : "animate-none"}`} />
+          <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">Up next</p>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <div className="flex-1 space-y-2">
+            <Skeleton className={`h-3 w-10/12 rounded-full ${showPulse ? "" : "animate-none"}`} />
+            <Skeleton className={`h-3 w-7/12 rounded-full ${showPulse ? "" : "animate-none"}`} />
+          </div>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <Skeleton className={`h-10 rounded-xl ${showPulse ? "" : "animate-none"}`} />
+          <Skeleton className={`h-10 rounded-xl ${showPulse ? "" : "animate-none"}`} />
+        </div>
+      </div>
+
+      {elapsedMs > 4800 && (
+        <p className="mt-4 ds-caption text-primary/70 animate-pulse">
+          Taking a bit longer than usual, but still working on your next step.
+        </p>
+      )}
+    </div>
+  </div>
+);
+
+export const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscoverPayload) => void }) => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [clientToken, setClientToken] = useState<string | null>(null);
   const [questions, setQuestions] = useState<BackendQuestion[]>([]);
@@ -1719,12 +1832,48 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [submitVisualElapsedMs, setSubmitVisualElapsedMs] = useState(0);
+  const [turnMotionClassName, setTurnMotionClassName] = useState("opacity-100 translate-y-0");
+  const [isTurnTransitioning, setIsTurnTransitioning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const chatCanvasRef = useRef<HTMLDivElement | null>(null);
+  const activeTurnIdRef = useRef<number | null>(null);
+  const turnMotionTimeoutRef = useRef<number | null>(null);
+  const scrollChatCanvasToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const node = chatCanvasRef.current;
+    if (!node) {
+      return;
+    }
+
+    if (typeof node.scrollTo === "function") {
+      node.scrollTo({ top: node.scrollHeight, behavior });
+      return;
+    }
+
+    node.scrollTop = node.scrollHeight;
+  }, []);
+  const waitingTurnRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node || typeof node.scrollIntoView !== "function") {
+      return;
+    }
+
+    node.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, []);
 
   const activeTurn = !isComplete && turns.length > 0 ? turns[turns.length - 1] : null;
   const activeQuestion = activeTurn?.question ?? null;
-  const answeredTurns = turns.filter((turn) => turn.userAnswer !== null);
+  const answeredTurns = isComplete
+    ? turns.filter((turn) => turn.userAnswer !== null)
+    : turns.slice(0, -1).filter((turn) => turn.userAnswer !== null);
+  const isLoadingSessionVisual = useDelayedPending(isLoadingSession, {
+    delayMs: 120,
+    minDurationMs: 500,
+  });
+  const isSubmittingVisual = useDelayedPending(isSubmitting, {
+    delayMs: 120,
+    minDurationMs: 500,
+  });
 
   const playAudio = useCallback((audioBase64: string | null) => {
     if (!audioBase64) {
@@ -1791,8 +1940,82 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
         audioRef.current.pause();
         audioRef.current = null;
       }
+      if (turnMotionTimeoutRef.current !== null) {
+        window.clearTimeout(turnMotionTimeoutRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isSubmittingVisual) {
+      setSubmitVisualElapsedMs(0);
+      return;
+    }
+
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => {
+      setSubmitVisualElapsedMs(Date.now() - startedAt);
+    }, 250);
+
+    return () => window.clearInterval(interval);
+  }, [isSubmittingVisual]);
+
+  useEffect(() => {
+    const currentTurnId = activeTurn?.question.id ?? null;
+
+    if (currentTurnId === null) {
+      return;
+    }
+
+    if (activeTurnIdRef.current === null) {
+      activeTurnIdRef.current = currentTurnId;
+      return;
+    }
+
+    if (activeTurnIdRef.current === currentTurnId) {
+      return;
+    }
+
+    activeTurnIdRef.current = currentTurnId;
+    setIsTurnTransitioning(true);
+    setTurnMotionClassName("opacity-0 translate-y-1");
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      setTurnMotionClassName("opacity-100 translate-y-0");
+    });
+
+    if (turnMotionTimeoutRef.current !== null) {
+      window.clearTimeout(turnMotionTimeoutRef.current);
+    }
+    turnMotionTimeoutRef.current = window.setTimeout(() => {
+      setTurnMotionClassName("opacity-100 translate-y-0");
+      setIsTurnTransitioning(false);
+      turnMotionTimeoutRef.current = null;
+    }, 160);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [activeTurn?.question.id]);
+
+  useEffect(() => {
+    if (isLoadingSession || !activeTurn) {
+      return;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      scrollChatCanvasToBottom("smooth");
+    });
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [activeTurn?.question.id, isLoadingSession, scrollChatCanvasToBottom]);
+
+  const waitLineIndex = Math.min(
+    Math.floor(submitVisualElapsedMs / 1200),
+    THESINATOR_WAIT_LINES.length - 1,
+  );
 
   const submitAnswer = useCallback(
     async (answer: string, inputMode: InputMode) => {
@@ -1924,8 +2147,8 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
     <div className="grid gap-5 xl:grid-cols-[228px_minmax(0,1fr)]">
       <div className="flex flex-col items-center gap-3 xl:pt-2">
         <ThesinatorAvatar
-          isTyping={isLoadingSession || isSubmitting}
-          isSpeaking={isSpeaking && !(isLoadingSession || isSubmitting)}
+          isTyping={isLoadingSessionVisual || isSubmittingVisual}
+          isSpeaking={isSpeaking && !(isLoadingSessionVisual || isSubmittingVisual)}
         />
       </div>
 
@@ -1943,134 +2166,187 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
         )}
 
         {isLoadingSession ? (
-          <div className="flex justify-center py-20">
-            <LoaderCircle size={28} className="animate-spin text-primary" />
-          </div>
+          isLoadingSessionVisual ? (
+            <StepGenieChatSkeleton showPulse />
+          ) : (
+            <StepGenieChatSkeleton showPulse={false} />
+          )
         ) : (
-          <div className="space-y-4">
+          <div
+            ref={chatCanvasRef}
+            className="max-h-[68vh] space-y-4 overflow-y-auto pr-1 sm:max-h-[72vh]"
+            data-testid="step-genie-chat-scroll-canvas"
+          >
             {answeredTurns.length > 0 && (
-              <div className="flex flex-wrap gap-2">
+              <div className="mb-4 space-y-3">
                 {answeredTurns.map((turn) => (
                   <div
                     key={`answer-${turn.question.id}`}
-                    className="min-w-[180px] rounded-2xl border border-border bg-background px-3 py-2.5"
+                    className="rounded-[1.5rem] border border-border/70 bg-card/70 px-4 py-4 shadow-sm backdrop-blur-sm"
                   >
-                    <p className="ds-caption text-muted-foreground">Q{turn.question.id}</p>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      {compactText(turn.question.question, 58)}
-                    </p>
-                    <p className="mt-1.5 text-sm font-semibold text-foreground">
-                      {compactText(turn.userAnswer?.text ?? "", 40)}
-                    </p>
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 flex h-6 min-w-6 items-center justify-center rounded-full bg-primary/15 px-2 text-[10px] font-semibold tracking-[0.08em] text-primary">
+                        Q{turn.question.id}
+                      </div>
+                      <div className="max-w-[90%] rounded-2xl rounded-bl-sm border border-primary/10 bg-background/80 px-4 py-3 shadow-sm">
+                        <p className="ds-caption font-semibold tracking-[0.14em] text-primary">Thesinator</p>
+                        <p className="mt-1 text-[0.94rem] leading-relaxed text-foreground whitespace-pre-wrap break-words">
+                          {turn.question.question}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex justify-end">
+                      <div className="max-w-[90%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-primary-foreground shadow-md">
+                        <p className="ds-caption font-semibold tracking-[0.14em] text-primary-foreground/80">
+                          You • {inputModeLabels[turn.userAnswer!.inputMode]}
+                        </p>
+                        <p className="mt-1 text-[0.94rem] leading-relaxed whitespace-pre-wrap break-words">
+                          {turn.userAnswer!.text}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
 
-            <div className="rounded-[1.5rem] border border-border bg-card/50 p-4 shadow-sm">
+            <div className="rounded-[2rem] border border-border/50 bg-card/60 p-5 shadow-lg backdrop-blur-xl">
               {!isComplete && activeTurn && (
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-border bg-background px-4 py-3">
-                    <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">Thesinator</p>
-                    <p className="mt-1 text-[0.94rem] leading-6 text-foreground">{activeTurn.assistantMessage}</p>
+                <div
+                  className={`space-y-5 transition-all duration-300 ease-out ${turnMotionClassName}`}
+                  data-testid="step-genie-active-turn"
+                  data-transitioning={isTurnTransitioning}
+                >
+                  <div className="rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/5 to-transparent px-5 py-4 shadow-sm backdrop-blur-md">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                      <p className="ds-caption font-semibold tracking-[0.14em] text-primary">Thesinator</p>
+                    </div>
+                    <p className="text-[1rem] leading-relaxed text-foreground">{activeTurn.assistantMessage}</p>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <div className="relative flex h-10 min-w-10 items-center justify-center rounded-[1.125rem] bg-primary px-3 text-base font-bold text-primary-foreground">
-                      Q{activeTurn.question.id}
+                  <div className="flex items-start gap-4">
+                    <div className="mt-1 relative flex h-12 w-12 shrink-0 items-center justify-center rounded-[1.25rem] bg-foreground text-background shadow-md">
+                      <span className="text-lg font-bold">Q{activeTurn.question.id}</span>
+                      <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-card bg-primary" />
                     </div>
-                    <div className="flex-1 rounded-[1.125rem] border border-border bg-background px-4 py-2.5">
-                      <p className="text-[0.94rem] font-normal leading-6 text-foreground">
+                    <div className="flex-1 rounded-[1.25rem] border border-border bg-background px-5 py-3 shadow-sm">
+                      <p className="text-[1rem] font-medium leading-relaxed text-foreground">
                         {activeTurn.question.question}
                       </p>
                     </div>
                   </div>
 
-                  {!isSubmitting && (
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {activeTurn.question.options.map((option) => (
-                        <button
-                          key={option}
-                          onClick={() => {
-                            void submitAnswer(option, "mcq");
-                          }}
-                          className="w-full rounded-[1.125rem] border border-border bg-background px-4 py-2.5 text-center text-[0.92rem] font-normal text-foreground transition-all duration-200 hover:border-primary/50 hover:bg-accent"
-                        >
-                          {option}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {isSubmitting && (
-                    <div className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-4 text-muted-foreground">
-                      <LoaderCircle size={18} className="animate-spin" />
-                      <span className="ds-small">Thesinator is preparing the next step...</span>
-                    </div>
-                  )}
-
-                  {!isSubmitting && isListening && liveTranscript && (
-                    <div className="rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="ds-caption font-semibold tracking-[0.14em] text-primary">
-                          {inputModeLabels.speech}
-                        </p>
-                        <p className="ds-caption text-muted-foreground">Listening...</p>
+                  {!isSubmittingVisual ? (
+                    <>
+                      <div className="grid gap-3 sm:grid-cols-2 mt-2">
+                        {activeTurn.question.options.map((option) => {
+                          const isSelectedMcq =
+                            activeTurn.userAnswer?.inputMode === "mcq" && activeTurn.userAnswer.text === option;
+                          return (
+                            <button
+                              key={option}
+                              onClick={() => {
+                                void submitAnswer(option, "mcq");
+                              }}
+                              disabled={isSubmitting || isComplete}
+                              className={`w-full rounded-[1.25rem] border px-5 py-3.5 text-center text-[0.96rem] font-medium transition-all duration-200 active:scale-[0.98] ${
+                                isSelectedMcq
+                                  ? "border-primary bg-primary/10 text-primary shadow-sm"
+                                  : "border-border bg-background text-foreground hover:border-primary/40 hover:bg-accent hover:shadow-md hover:-translate-y-0.5"
+                              } disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:scale-100 disabled:hover:translate-y-0 disabled:hover:shadow-none`}
+                            >
+                              {option}
+                            </button>
+                          );
+                        })}
                       </div>
-                      <p className="ds-body mt-2 whitespace-pre-line text-foreground">{liveTranscript}</p>
+
+                      {!isSubmitting && isListening && liveTranscript && (
+                        <div className="rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="ds-caption font-semibold tracking-[0.14em] text-primary">
+                              {inputModeLabels.speech}
+                            </p>
+                            <p className="ds-caption text-muted-foreground">Listening...</p>
+                          </div>
+                          <p className="ds-body mt-2 whitespace-pre-line text-foreground">{liveTranscript}</p>
+                        </div>
+                      )}
+
+                      <div className="rounded-[1.5rem] border border-border/50 bg-background/80 p-2.5 shadow-md backdrop-blur-md transition-all focus-within:border-primary/50 focus-within:shadow-lg">
+                        <div className="flex gap-2 items-center">
+                          <input
+                            type="text"
+                            value={textInput}
+                            onChange={(event) => setTextInput(event.target.value)}
+                            onKeyDown={(event) => event.key === "Enter" && handleTextSubmit()}
+                            placeholder="Or answer freely in your own words..."
+                            disabled={isSubmitting || isComplete}
+                            className="flex-1 bg-transparent px-4 py-2 text-base outline-none placeholder:text-muted-foreground"
+                          />
+                          <Button
+                            onClick={toggleListening}
+                            size="icon"
+                            variant={isListening ? "destructive" : "outline"}
+                            className="rounded-full shrink-0"
+                            disabled={isSubmitting || isComplete}
+                          >
+                            {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+                          </Button>
+                          <Button
+                            onClick={handleTextSubmit}
+                            size="icon"
+                            className="rounded-full shrink-0"
+                            disabled={isSubmitting || isComplete}
+                          >
+                            <Send size={16} />
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      ref={waitingTurnRef}
+                      className="space-y-6 animate-in fade-in zoom-in-95 duration-300"
+                    >
+                      {activeTurn.userAnswer && (
+                        <div className="flex justify-end mt-4">
+                          <div className="max-w-[85%] rounded-[1.25rem] rounded-tr-sm bg-primary px-5 py-3.5 text-primary-foreground shadow-md">
+                            <p className="text-[0.96rem] leading-relaxed">{activeTurn.userAnswer.text}</p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <StepGenieTurnWaiting
+                        lineIndex={waitLineIndex}
+                        elapsedMs={submitVisualElapsedMs}
+                        showPulse
+                      />
                     </div>
                   )}
-
-                  <div className="rounded-[1.5rem] border border-border bg-background p-2.5">
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={textInput}
-                        onChange={(event) => setTextInput(event.target.value)}
-                        onKeyDown={(event) => event.key === "Enter" && handleTextSubmit()}
-                        placeholder="Or answer freely in your own words..."
-                        disabled={isSubmitting || isComplete}
-                        className="flex-1 bg-transparent px-3 py-2 text-base outline-none placeholder:text-muted-foreground"
-                      />
-                      <Button
-                        onClick={toggleListening}
-                        size="icon"
-                        variant={isListening ? "destructive" : "outline"}
-                        className="rounded-full shrink-0"
-                        disabled={isSubmitting || isComplete}
-                      >
-                        {isListening ? <MicOff size={16} /> : <Mic size={16} />}
-                      </Button>
-                      <Button
-                        onClick={handleTextSubmit}
-                        size="icon"
-                        className="rounded-full shrink-0"
-                        disabled={isSubmitting || isComplete}
-                      >
-                        {isSubmitting ? (
-                          <LoaderCircle size={16} className="animate-spin" />
-                        ) : (
-                          <Send size={16} />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
                 </div>
               )}
 
               {isComplete && (
-                <div className="space-y-4">
+                <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {finalAssistantMessage && (
-                    <div className="rounded-2xl border border-border bg-background px-4 py-3">
-                      <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">Thesinator</p>
-                      <p className="mt-1.5 text-base leading-7 text-foreground">{finalAssistantMessage}</p>
+                    <div className="rounded-2xl border border-primary/10 bg-gradient-to-br from-primary/5 to-transparent px-5 py-4 shadow-sm backdrop-blur-md">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+                        <p className="ds-caption font-semibold tracking-[0.14em] text-primary">Thesinator</p>
+                      </div>
+                      <p className="text-[1rem] leading-relaxed text-foreground">{finalAssistantMessage}</p>
                     </div>
                   )}
-                  <div className="rounded-2xl border border-border bg-background px-4 py-4">
-                    <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">Complete</p>
-                    <p className="ds-title-cards mt-2 text-foreground">Your answers are in</p>
-                    <p className="ds-small mt-2 text-muted-foreground">
-                      We have enough to open your future view.
+                  <div className="flex flex-col items-center justify-center rounded-[1.5rem] border border-primary/20 bg-primary/5 px-6 py-8 text-center shadow-sm backdrop-blur-md">
+                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
+                      <Check size={28} />
+                    </div>
+                    <p className="ds-title-cards text-foreground">Your answers are in</p>
+                    <p className="ds-body mt-2 text-muted-foreground max-w-sm">
+                      We've mapped your choices and have enough context to open your future view.
                     </p>
                   </div>
                 </div>
