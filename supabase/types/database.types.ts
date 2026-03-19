@@ -189,6 +189,7 @@ export type Database = {
           created_at: string
           deep_status: string
           detail: Json | null
+          display_rank: number
           future_session_id: string
           id: string
           map_nodes: Json | null
@@ -199,6 +200,8 @@ export type Database = {
           seed_text: string | null
           source: string
           suggested_prompts: Json
+          swarm_impact: Json | null
+          swarm_impact_status: string
           title: string
           topic_id: string | null
           updated_at: string
@@ -208,6 +211,7 @@ export type Database = {
           created_at?: string
           deep_status?: string
           detail?: Json | null
+          display_rank: number
           future_session_id: string
           id?: string
           map_nodes?: Json | null
@@ -218,6 +222,8 @@ export type Database = {
           seed_text?: string | null
           source: string
           suggested_prompts?: Json
+          swarm_impact?: Json | null
+          swarm_impact_status?: string
           title: string
           topic_id?: string | null
           updated_at?: string
@@ -227,6 +233,7 @@ export type Database = {
           created_at?: string
           deep_status?: string
           detail?: Json | null
+          display_rank?: number
           future_session_id?: string
           id?: string
           map_nodes?: Json | null
@@ -237,6 +244,8 @@ export type Database = {
           seed_text?: string | null
           source?: string
           suggested_prompts?: Json
+          swarm_impact?: Json | null
+          swarm_impact_status?: string
           title?: string
           topic_id?: string | null
           updated_at?: string
@@ -293,6 +302,10 @@ export type Database = {
       future_sessions: {
         Row: {
           created_at: string
+          finalization_error: string | null
+          finalization_progress: number
+          finalization_stage_label: string | null
+          finalization_status: string
           graph_error: string | null
           graph_id: string | null
           graph_progress: number
@@ -315,6 +328,10 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          finalization_error?: string | null
+          finalization_progress?: number
+          finalization_stage_label?: string | null
+          finalization_status?: string
           graph_error?: string | null
           graph_id?: string | null
           graph_progress?: number
@@ -337,6 +354,10 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          finalization_error?: string | null
+          finalization_progress?: number
+          finalization_stage_label?: string | null
+          finalization_status?: string
           graph_error?: string | null
           graph_id?: string | null
           graph_progress?: number

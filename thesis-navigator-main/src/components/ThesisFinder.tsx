@@ -66,12 +66,14 @@ import thesinatorThinking from "@/assets/thesinator-thinking.png";
 
 const stages = [
   { id: "discover", label: "Discover" },
-  { id: "build", label: "See your future" },
-  { id: "explore", label: "Explore theses" },
+  { id: "build", label: "Simulate" },
+  { id: "explore", label: "Explore" },
   { id: "detail", label: "Detail" },
 ] as const;
 
 type StageId = (typeof stages)[number]["id"];
+
+const visibleStages = stages.filter((item) => item.id !== "detail");
 
 type CompletedDiscoverPayload = {
   sessionId: string;
@@ -139,6 +141,18 @@ const sourceStyles: Record<FutureCard["source"], string> = {
   matched: "bg-primary/10 text-primary",
   generated: "bg-emerald-500/10 text-emerald-700",
 };
+
+const swarmDecisionLabels = {
+  up: "Strengthened by swarm",
+  steady: "Confirmed by swarm",
+  down: "Tradeoffs surfaced",
+} as const;
+
+const swarmDecisionStyles = {
+  up: "bg-emerald-500/10 text-emerald-700",
+  steady: "bg-sky-500/10 text-sky-700",
+  down: "bg-amber-500/10 text-amber-700",
+} as const;
 
 const nodeStyles: Record<FutureMapNode["type"], string> = {
   future: "bg-primary text-primary-foreground border-primary",
@@ -484,45 +498,50 @@ const FutureCardPreview = ({
 }: {
   future: FutureCard;
   onOpen: (futureId: string) => void;
-}) => (
-  <article className="rounded-[1.5rem] border border-border bg-card p-5 shadow-sm transition-transform duration-300 hover:-translate-y-0.5">
-    <div className="flex flex-wrap items-center gap-2">
-      <span className={`rounded-full px-3 py-1 ds-caption ${sourceStyles[future.source]}`}>
-        {sourceLabels[future.source]}
-      </span>
-      {(future.grounding.company || future.grounding.university) && (
-        <span className="rounded-full bg-muted px-3 py-1 ds-caption text-muted-foreground">
-          {future.grounding.company?.name ?? future.grounding.university?.name}
+}) => {
+  const pathReason = future.swarm_impact?.why_this_path ?? future.why_fit;
+  const decision = future.swarm_impact?.decision ?? null;
+
+  return (
+    <article className="rounded-[1.5rem] border border-border bg-card p-5 shadow-sm transition-transform duration-300 hover:-translate-y-0.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`rounded-full px-3 py-1 ds-caption ${sourceStyles[future.source]}`}>
+          {sourceLabels[future.source]}
         </span>
-      )}
-      {future.grounding.fields.slice(0, 2).map((field) => (
-        <span key={field} className="rounded-full bg-muted px-3 py-1 ds-caption text-muted-foreground">
-          {field}
-        </span>
-      ))}
-    </div>
-    <div className="mt-5 space-y-3">
-      <h3 className="ds-title-sm text-foreground">{future.thesis_title}</h3>
-      <p className="ds-small text-muted-foreground">{compactText(future.thesis_summary, 136)}</p>
-      <div className="rounded-2xl bg-muted/50 px-4 py-3">
-        <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">Why it fits</p>
-        <p className="ds-small mt-2 text-foreground">{compactText(future.why_fit, 130)}</p>
+        {decision && (
+          <span className={`rounded-full px-3 py-1 ds-caption ${swarmDecisionStyles[decision]}`}>
+            {swarmDecisionLabels[decision]}
+          </span>
+        )}
+        {(future.grounding.company || future.grounding.university) && (
+          <span className="rounded-full bg-muted px-3 py-1 ds-caption text-muted-foreground">
+            {future.grounding.company?.name ?? future.grounding.university?.name}
+          </span>
+        )}
       </div>
-      <p className="ds-small text-muted-foreground">
-        Could lead to: {future.future_role} at {future.future_organization}
-      </p>
-    </div>
-    <div className="mt-6 flex items-center justify-between">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        {future.saved ? <Bookmark size={16} className="fill-current text-primary" /> : <Compass size={16} />}
-        <span className="ds-caption">{future.saved ? "Saved" : "Open thesis"}</span>
+      <div className="mt-5 space-y-3">
+        <h3 className="ds-title-sm text-foreground">{future.thesis_title}</h3>
+        <p className="ds-small text-muted-foreground">{compactText(future.thesis_summary, 112)}</p>
+        <div className="rounded-2xl bg-muted/50 px-4 py-3">
+          <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">Why this path now</p>
+          <p className="ds-small mt-2 text-foreground">{compactText(pathReason, 130)}</p>
+        </div>
+        <p className="ds-small text-muted-foreground">
+          Could lead to: {future.future_role} at {future.future_organization}
+        </p>
       </div>
-      <Button onClick={() => onOpen(future.future_id)} className="rounded-full gap-2">
-        Open thesis <ChevronRight size={16} />
-      </Button>
-    </div>
-  </article>
-);
+      <div className="mt-6 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          {future.saved ? <Bookmark size={16} className="fill-current text-primary" /> : <Compass size={16} />}
+          <span className="ds-caption">{future.saved ? "Saved" : "Preview"}</span>
+        </div>
+        <Button onClick={() => onOpen(future.future_id)} className="rounded-full gap-2">
+          Open thesis <ChevronRight size={16} />
+        </Button>
+      </div>
+    </article>
+  );
+};
 
 const FutureMap = ({ nodes }: { nodes: FutureMapNode[] }) => (
   <div className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
@@ -590,6 +609,7 @@ const describeSwarmAction = (action: FutureSwarmAction) => {
 const getFutureBuildCopy = (
   graphBuild: FutureSessionState["graph_build"],
   swarm: SwarmState,
+  finalization: FutureViewState["finalization"],
 ) => {
   if (graphBuild.status !== "ready") {
     return {
@@ -615,19 +635,43 @@ const getFutureBuildCopy = (
     };
   }
 
-  if (swarm.status === "ready") {
+  if (swarm.status === "ready" && finalization.status !== "ready") {
     return {
-      title: "Your future path is ready",
+      title: "Finalizing thesis outcomes",
       body:
-        "The stakeholder graph and live future path are both ready. You can keep exploring while the results stay grounded in the same MiroFish session.",
+        "The swarm run is complete. We’re now turning the finished simulation into ranked thesis paths, future selves, and ready-to-open detail pages.",
+    };
+  }
+
+  if (swarm.status === "ready" && finalization.status === "ready") {
+    return {
+      title: "Your thesis outcomes are ready",
+      body:
+        "The stakeholder graph, finished swarm run, and thesis outcomes are all ready. Every thesis path now includes swarm-backed reasoning and a prepared future self.",
     };
   }
 
   return {
     title: "Your future view hit a problem",
     body:
-      "Part of the future pipeline failed, but your thesis matches are still available and we’ll keep the rest of the experience usable.",
+      "Part of the future pipeline failed. We’re keeping thesis exploration locked rather than opening incomplete future-self outcomes.",
   };
+};
+
+const getFinalizationStatusCopy = (finalization: FutureViewState["finalization"]) => {
+  if (finalization.status === "failed") {
+    return "The final thesis synthesis failed, so we are keeping thesis exploration locked instead of showing incomplete results.";
+  }
+
+  if (finalization.status === "ready") {
+    return "The finished swarm run has been turned into thesis outcomes, visible reasons, and ready future selves.";
+  }
+
+  if (finalization.status === "preparing") {
+    return "We’re translating the finished swarm run into ranked thesis paths and future-self packages for every card.";
+  }
+
+  return "Thesis outcomes will finalize after the full swarm run completes.";
 };
 
 const getSwarmStatusCopy = (swarm: SwarmState) => {
@@ -759,6 +803,48 @@ const FutureSwarmStatusPanel = ({
           {latestEvent.error}
         </p>
       )}
+    </section>
+  );
+};
+
+const FutureFinalizationStatusPanel = ({
+  finalization,
+}: {
+  finalization: FutureViewState["finalization"];
+}) => {
+  const latestTimestamp = finalization.status === "ready" ? "now" : null;
+
+  return (
+    <section className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="ds-title-cards text-foreground">
+            {finalization.stage_label ?? "Finalizing thesis outcomes"}
+          </p>
+          <p className="ds-small text-muted-foreground">Latest thesis outcome update</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
+            {finalization.status}
+          </span>
+          <span className="rounded-full bg-primary/10 px-3 py-1 ds-caption text-primary">
+            {finalization.progress}%
+          </span>
+        </div>
+      </div>
+      <div className="mt-5 h-2 overflow-hidden rounded-full bg-muted/50">
+        <div
+          className="h-full rounded-full bg-primary transition-all duration-500"
+          style={{ width: `${finalization.progress}%` }}
+        />
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+        <span>Latest update</span>
+        <span>{formatGraphEventTime(latestTimestamp)}</span>
+      </div>
+      <p className="mt-2 ds-small text-foreground">
+        {finalization.error ?? getFinalizationStatusCopy(finalization)}
+      </p>
     </section>
   );
 };
@@ -948,46 +1034,37 @@ const BuildFutureStage = ({
   futureSession,
   graphBuild,
   swarm,
+  finalization,
   matchingNote,
   onContinue,
 }: {
   futureSession: FutureSessionState;
   graphBuild: FutureSessionState["graph_build"];
   swarm: SwarmState;
+  finalization: FutureViewState["finalization"];
   matchingNote: string | null;
   onContinue: () => void;
 }) => {
-  const canRevealTheses = futureSession.matched_futures.length > 0;
-  const copy = getFutureBuildCopy(graphBuild, swarm);
-  const hasFutureViewError = graphBuild.error || swarm.error;
+  const canRevealTheses = futureSession.matched_futures.length > 0 && finalization.status === "ready";
+  const copy = getFutureBuildCopy(graphBuild, swarm, finalization);
+  const hasFutureViewError = graphBuild.error || swarm.error || finalization.error;
+  const showFinalizationPanel = finalization.status !== "queued";
 
   return (
     <div className="space-y-8">
       <div className="rounded-[2rem] border border-border bg-card px-6 py-8 shadow-sm">
-        <p className="ds-caption uppercase tracking-[0.18em] text-muted-foreground">See your future</p>
+        <p className="ds-caption uppercase tracking-[0.18em] text-muted-foreground">Simulate your future</p>
         <h2 className="ds-title-lg mt-3 text-foreground">{copy.title}</h2>
         <p className="ds-body mt-3 max-w-3xl text-muted-foreground">
           {copy.body}
         </p>
         {matchingNote && <p className="mt-4 ds-caption text-muted-foreground">{matchingNote}</p>}
-        <div className="mt-5 flex flex-wrap gap-2">
-          <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
-            Graph: {graphBuild.status}
-          </span>
-          <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
-            Swarm: {swarm.status}
-          </span>
-          {swarm.runner_status && (
-            <span className="rounded-full bg-primary/10 px-3 py-1 ds-caption text-primary">
-              Runner: {swarm.runner_status}
-            </span>
-          )}
-        </div>
       </div>
 
-      <div className="grid gap-8 xl:grid-cols-3">
+      <div className={`grid gap-8 xl:grid-cols-2 ${showFinalizationPanel ? "2xl:grid-cols-4" : "2xl:grid-cols-3"}`}>
         <FutureBuildStatusPanel graphBuild={graphBuild} />
         <FutureSwarmStatusPanel swarm={swarm} />
+        {showFinalizationPanel && <FutureFinalizationStatusPanel finalization={finalization} />}
         <SwarmActionFeed swarm={swarm} />
       </div>
 
@@ -997,7 +1074,7 @@ const BuildFutureStage = ({
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-4">
           <p className="ds-label text-destructive">Future build failed</p>
           <p className="ds-small mt-2 whitespace-pre-line text-destructive">
-            {graphBuild.error ?? swarm.error}
+            {graphBuild.error ?? swarm.error ?? finalization.error}
           </p>
         </div>
       )}
@@ -1006,9 +1083,9 @@ const BuildFutureStage = ({
         <section className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="ds-title-cards text-foreground">Your thesis paths are already ready</p>
+              <p className="ds-title-cards text-foreground">Your thesis paths are ready</p>
               <p className="ds-small text-muted-foreground">
-                Open the thesis list now. The future view can keep enriching itself in the background.
+                The swarm-backed thesis reasons and future selves are fully prepared. You can open the thesis list now.
               </p>
             </div>
             <Button onClick={onContinue} className="rounded-full gap-2">
@@ -1041,8 +1118,11 @@ const ExploreStage = ({
   );
   const graphBuild = futureView?.graph_build ?? futureSession.graph_build;
   const swarm = futureView?.swarm ?? futureSession.swarm;
+  const finalization = futureView?.finalization ?? futureSession.finalization;
   const isFutureViewUpdating =
-    graphBuild.status !== "ready" || (swarm.status !== "ready" && swarm.status !== "failed");
+    graphBuild.status !== "ready" ||
+    (swarm.status !== "ready" && swarm.status !== "failed") ||
+    finalization.status !== "ready";
 
   return (
     <div className="space-y-8">
@@ -1055,7 +1135,7 @@ const ExploreStage = ({
         {isFutureViewUpdating && (
           <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-primary">
             <LoaderCircle size={14} className="animate-spin" />
-            <span className="ds-caption">Future view still updating</span>
+            <span className="ds-caption">Thesis outcomes still finalizing</span>
           </div>
         )}
       </div>
@@ -1142,6 +1222,13 @@ const FutureDetailStage = ({
   const detail = detailResponse?.future_detail;
   const mapNodes = detailResponse?.map_nodes ?? [];
   const suggestedPrompts = detailResponse?.suggested_prompts ?? [];
+  const swarmImpact = detailResponse?.swarm_impact ?? future.swarm_impact;
+  const swarmReason = swarmImpact?.why_this_path ?? detail?.why_this_path ?? future.why_fit;
+  const futureSelfAngle =
+    swarmImpact?.future_self_angle ??
+    detail?.future_self_intro ??
+    "Ask what changed, what mattered early, or how to prepare before committing.";
+  const swarmRisks = (swarmImpact?.risks ?? []).filter((risk) => risk.trim().length > 0).slice(0, 3);
   const chatHistory = detailResponse?.chat_history ?? [];
   const [isThesisExpanded, setIsThesisExpanded] = useState(false);
 
@@ -1158,11 +1245,109 @@ const FutureDetailStage = ({
         </Button>
       </div>
 
-      <FutureCompareRibbon
-        futures={savedFutures}
-        activeFutureId={future.future_id}
-        onSelectFuture={onSelectFuture}
-      />
+      <section className="rounded-[2rem] border border-primary/20 bg-gradient-to-br from-primary/10 via-background to-background p-6 shadow-sm">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-2xl">
+            <div className="flex items-center gap-2">
+              <MessageCircle size={18} className="text-primary" />
+              <p className="ds-title-cards text-foreground">Ask your future self</p>
+            </div>
+            <p className="ds-body mt-3 text-foreground">
+              Ask what this path is really like and what matters early.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className={`rounded-full px-3 py-1 ds-caption ${sourceStyles[future.source]}`}>
+                {sourceLabels[future.source]}
+              </span>
+              {swarmImpact && (
+                <span
+                  className={`rounded-full px-3 py-1 ds-caption ${swarmDecisionStyles[swarmImpact.decision]}`}
+                >
+                  {swarmDecisionLabels[swarmImpact.decision]}
+                </span>
+              )}
+              <span className="rounded-full bg-background/80 px-3 py-1 ds-caption text-foreground">
+                {future.thesis_title}
+              </span>
+            </div>
+            <p className="mt-4 ds-small text-muted-foreground">
+              <span className="text-foreground">Why this path now:</span> {compactText(swarmReason, 180)}
+            </p>
+          </div>
+          <div className="rounded-[1.5rem] border border-primary/20 bg-background/80 px-4 py-4 xl:w-[320px]">
+            <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">You later on</p>
+            <p className="ds-label mt-2 text-foreground">
+              {detail?.hero_title ?? `${future.future_role} at ${future.future_organization}`}
+            </p>
+            <p className="ds-small mt-2 text-muted-foreground">
+              {compactText(
+                detail?.hero_summary ??
+                  detail?.future_self_intro ??
+                  "Ask what changed, what mattered early, or how to prepare before committing.",
+                140,
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="mt-5">
+          <SuggestedPromptButtons prompts={suggestedPrompts} onPrompt={onSendPrompt} />
+        </div>
+        <div className="mt-6 max-h-[420px] space-y-3 overflow-y-auto pr-1">
+          {chatHistory.length === 0 && (
+            <div className="rounded-2xl border border-border bg-background/80 px-5 py-5">
+              <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">Future self</p>
+              <p className="ds-body mt-2 text-foreground">
+                {detail?.future_self_intro ??
+                  "Ask what changed, what mattered early, or how to prepare before committing."}
+              </p>
+            </div>
+          )}
+          {chatHistory.map((message, index) => (
+            <div
+              key={`${message.role}-${index}`}
+              className={`rounded-2xl px-4 py-4 ${
+                message.role === "user"
+                  ? "ml-8 border border-primary/20 bg-primary/10"
+                  : "mr-8 border border-border bg-background/80"
+              }`}
+            >
+              <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">
+                {message.role === "user" ? "You" : "Future self"}
+              </p>
+              <p className="ds-small mt-2 whitespace-pre-line text-foreground">{message.content}</p>
+            </div>
+          ))}
+          {isChatSending && (
+            <div className="mr-8 rounded-2xl border border-border bg-background/80 px-4 py-4">
+              <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">Future self</p>
+              <div className="mt-2 flex items-center gap-2 text-muted-foreground">
+                <LoaderCircle size={16} className="animate-spin" />
+                <p className="ds-small text-foreground">Thinking about your path...</p>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <input
+            type="text"
+            value={chatInput}
+            onChange={(event) => onChatInputChange(event.target.value)}
+            onKeyDown={(event) => event.key === "Enter" && onSendChat()}
+            autoFocus
+            disabled={isChatSending}
+            placeholder="Ask a question about this path..."
+            className="flex-1 rounded-full border border-input bg-background px-5 py-3 ds-small outline-none transition-shadow focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60"
+          />
+          <Button
+            onClick={onSendChat}
+            className="rounded-full gap-2 px-5"
+            disabled={!chatInput.trim() || isChatSending}
+          >
+            {isChatSending ? <LoaderCircle size={16} className="animate-spin" /> : <Send size={16} />}
+            {isChatSending ? "Sending" : "Ask"}
+          </Button>
+        </div>
+      </section>
 
       <section className="rounded-[2rem] border border-border bg-card px-6 py-8 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
@@ -1223,87 +1408,49 @@ const FutureDetailStage = ({
               </CollapsibleTrigger>
             </div>
             <CollapsibleContent className="data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down overflow-hidden">
-              <div className="mt-4 rounded-2xl border border-border bg-background px-4 py-4">
-                <p className="ds-body text-foreground">{future.thesis_summary}</p>
-                <p className="ds-small mt-4 text-muted-foreground">
-                  {detail?.why_this_path ?? future.why_fit}
-                </p>
+              <div className="mt-4 space-y-4">
+                <div className="rounded-2xl border border-border bg-background px-4 py-4">
+                  <p className="ds-body text-foreground">{future.thesis_summary}</p>
+                  <p className="ds-small mt-4 text-muted-foreground">
+                    {detail?.why_this_path ?? future.why_fit}
+                  </p>
+                </div>
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <div className="rounded-2xl border border-border bg-background px-4 py-4">
+                    <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">
+                      What the swarm noticed
+                    </p>
+                    <p className="ds-small mt-2 text-foreground">{futureSelfAngle}</p>
+                  </div>
+                  {swarmRisks.length > 0 && (
+                    <div className="rounded-2xl border border-border bg-background px-4 py-4">
+                      <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">
+                        Early tradeoffs
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {swarmRisks.map((risk) => (
+                          <span
+                            key={risk}
+                            className="rounded-full bg-amber-500/10 px-3 py-1 ds-caption text-amber-700"
+                          >
+                            {compactText(risk, 64)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </CollapsibleContent>
           </div>
         </Collapsible>
       </section>
 
-      <section className="rounded-[2rem] border border-primary/20 bg-gradient-to-br from-primary/10 via-background to-background p-6 shadow-sm">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div className="max-w-2xl">
-            <div className="flex items-center gap-2">
-              <MessageCircle size={18} className="text-primary" />
-              <p className="ds-title-cards text-foreground">Ask your future self</p>
-            </div>
-            <p className="ds-body mt-3 text-foreground">
-              Ask what this path is really like and what matters early.
-            </p>
-          </div>
-          <div className="rounded-[1.5rem] border border-primary/20 bg-background/80 px-4 py-4 xl:w-[320px]">
-            <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">You later on</p>
-            <p className="ds-label mt-2 text-foreground">
-              {detail?.hero_title ?? `${future.future_role} at ${future.future_organization}`}
-            </p>
-            <p className="ds-small mt-2 text-muted-foreground">
-              {detail?.future_self_intro ??
-                "Ask what changed, what mattered early, or how to prepare before committing."}
-            </p>
-          </div>
-        </div>
-        <div className="mt-5">
-          <SuggestedPromptButtons prompts={suggestedPrompts} onPrompt={onSendPrompt} />
-        </div>
-        <div className="mt-6 max-h-[420px] space-y-3 overflow-y-auto pr-1">
-          {chatHistory.length === 0 && (
-            <div className="rounded-2xl border border-border bg-background/80 px-5 py-5">
-              <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">Future self</p>
-              <p className="ds-body mt-2 text-foreground">
-                {detail?.future_self_intro ??
-                  "Ask what changed, what mattered early, or how to prepare before committing."}
-              </p>
-            </div>
-          )}
-          {chatHistory.map((message, index) => (
-            <div
-              key={`${message.role}-${index}`}
-              className={`rounded-2xl px-4 py-4 ${
-                message.role === "user"
-                  ? "ml-8 border border-primary/20 bg-primary/10"
-                  : "mr-8 border border-border bg-background/80"
-              }`}
-            >
-              <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">
-                {message.role === "user" ? "You" : "Future self"}
-              </p>
-              <p className="ds-small mt-2 whitespace-pre-line text-foreground">{message.content}</p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 flex gap-2">
-          <input
-            type="text"
-            value={chatInput}
-            onChange={(event) => onChatInputChange(event.target.value)}
-            onKeyDown={(event) => event.key === "Enter" && onSendChat()}
-            placeholder="Ask a question about this path..."
-            className="flex-1 rounded-full border border-input bg-background px-5 py-3 ds-small outline-none transition-shadow focus:ring-2 focus:ring-ring/20"
-          />
-          <Button
-            onClick={onSendChat}
-            className="rounded-full gap-2 px-5"
-            disabled={!chatInput.trim() || isChatSending}
-          >
-            {isChatSending ? <LoaderCircle size={16} className="animate-spin" /> : <Send size={16} />}
-            Ask
-          </Button>
-        </div>
-      </section>
+      <FutureCompareRibbon
+        futures={savedFutures}
+        activeFutureId={future.future_id}
+        onSelectFuture={onSelectFuture}
+      />
 
       <FutureMap nodes={mapNodes.length > 0 ? mapNodes : buildFallbackMapNodes(future)} />
 
@@ -1918,6 +2065,7 @@ const ThesisFinder = () => {
     setFutureView((prev) => ({
       graph_build: stabilizeGraphBuild(prev?.graph_build ?? null, nextFutureView.graph_build),
       swarm: nextFutureView.swarm,
+      finalization: nextFutureView.finalization,
     }));
     setFutureSession((prev) =>
       prev
@@ -1925,6 +2073,7 @@ const ThesisFinder = () => {
             ...prev,
             graph_build: stabilizeGraphBuild(prev.graph_build, nextFutureView.graph_build),
             swarm: nextFutureView.swarm,
+            finalization: nextFutureView.finalization,
           }
         : prev,
     );
@@ -1944,17 +2093,19 @@ const ThesisFinder = () => {
         setFutureView({
           graph_build: restored.graph_build,
           swarm: restored.swarm,
+          finalization: restored.finalization,
         });
         const restoredActiveFutureId =
           readActiveFutureStorage(storedFutureSessionId) ?? restored.selected_future_id ?? null;
-        if (restoredActiveFutureId) {
+        if (restored.finalization.status === "ready" && restoredActiveFutureId) {
           const restoredDetail = await getFuture(storedFutureSessionId, restoredActiveFutureId);
           setFutureDetails({ [restoredActiveFutureId]: restoredDetail });
           setActiveFutureId(restoredActiveFutureId);
           setStage("detail");
-        } else if (restored.graph_build.status === "ready" && restored.swarm.status === "ready") {
+        } else if (restored.finalization.status === "ready") {
           setStage("explore");
         } else {
+          setActiveFutureId(null);
           setStage("build");
         }
       } catch (error) {
@@ -1976,10 +2127,12 @@ const ThesisFinder = () => {
     const currentFutureView = futureView ?? {
       graph_build: futureSession.graph_build,
       swarm: futureSession.swarm,
+      finalization: futureSession.finalization,
     };
     const isFutureViewSettled =
       (currentFutureView.graph_build.status === "ready" || currentFutureView.graph_build.status === "failed") &&
-      (currentFutureView.swarm.status === "ready" || currentFutureView.swarm.status === "failed");
+      (currentFutureView.swarm.status === "ready" || currentFutureView.swarm.status === "failed") &&
+      (currentFutureView.finalization.status === "ready" || currentFutureView.finalization.status === "failed");
     if (isFutureViewSettled) {
       return;
     }
@@ -2077,6 +2230,7 @@ const ThesisFinder = () => {
       setFutureView({
         graph_build: created.graph_build,
         swarm: created.swarm,
+        finalization: created.finalization,
       });
       setIsGeneratedExpanded(false);
       startTransition(() => {
@@ -2092,6 +2246,12 @@ const ThesisFinder = () => {
 
   const handleOpenFuture = useCallback(
     (futureId: string) => {
+      const finalizationStatus = futureView?.finalization.status ?? futureSession?.finalization.status;
+      if (finalizationStatus !== "ready") {
+        setScreenError("Thesis outcomes are still finalizing. Stay in See your future until everything is ready.");
+        startTransition(() => setStage("build"));
+        return;
+      }
       if (futureSession) {
         writeActiveFutureStorage(futureSession.future_session_id, futureId);
       }
@@ -2100,7 +2260,7 @@ const ThesisFinder = () => {
       startTransition(() => setStage("detail"));
       void hydrateFutureDetail(futureId);
     },
-    [futureSession, hydrateFutureDetail],
+    [futureSession, futureView, hydrateFutureDetail],
   );
 
   const handleSelectSavedFuture = useCallback(
@@ -2115,8 +2275,13 @@ const ThesisFinder = () => {
   }, []);
 
   const handleContinueToExplore = useCallback(() => {
+    const finalizationStatus = futureView?.finalization.status ?? futureSession?.finalization.status;
+    if (finalizationStatus !== "ready") {
+      setScreenError("We’re still finalizing the swarm-backed thesis outcomes.");
+      return;
+    }
     startTransition(() => setStage("explore"));
-  }, []);
+  }, [futureSession, futureView]);
 
   const handleSaveActiveFuture = useCallback(async () => {
     if (!futureSession || !activeFuture) {
@@ -2172,6 +2337,7 @@ const ThesisFinder = () => {
             simulation_status: activeFuture.simulation_status,
             map_nodes: [],
             suggested_prompts: [],
+            swarm_impact: activeFuture.swarm_impact,
             chat_history: [],
           }),
           chat_history: [...(existing?.chat_history ?? []), { role: "user", content: prompt }],
@@ -2237,21 +2403,25 @@ const ThesisFinder = () => {
       ? {
           graph_build: futureSession.graph_build,
           swarm: futureSession.swarm,
+          finalization: futureSession.finalization,
         }
       : null
   );
   const currentGraphBuild = currentFutureView?.graph_build ?? null;
   const currentSwarm = currentFutureView?.swarm ?? null;
+  const currentFinalization = currentFutureView?.finalization ?? null;
   const matchingNote = formatMatchingNote(discoverSummary?.matchingMeta ?? null);
   const currentStageIndex = stages.findIndex((item) => item.id === stage);
+  const activeVisibleStage = stage === "detail" ? "explore" : stage;
+  const currentVisibleStageIndex = visibleStages.findIndex((item) => item.id === activeVisibleStage);
   const reachableStages = useMemo(
     () => ({
       discover: true,
       build: Boolean(futureSession && currentGraphBuild && currentSwarm),
-      explore: Boolean(futureSession),
-      detail: Boolean(futureSession && activeFuture),
+      explore: Boolean(futureSession && currentFinalization?.status === "ready"),
+      detail: Boolean(futureSession && activeFuture && currentFinalization?.status === "ready"),
     }),
-    [activeFuture, currentGraphBuild, currentSwarm, futureSession],
+    [activeFuture, currentFinalization?.status, currentGraphBuild, currentSwarm, futureSession],
   );
 
   const handleStageNavigation = useCallback(
@@ -2272,18 +2442,15 @@ const ThesisFinder = () => {
       <div className="mx-auto w-full max-w-[1440px] px-4 py-5 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="ds-caption uppercase tracking-[0.18em] text-muted-foreground">
-              Thesis Copilot
-            </p>
-            <h1 className="ds-title-lg mt-2 text-foreground">Thesis future simulator</h1>
+            <h1 className="ds-title-lg text-foreground">Thesinator</h1>
             <p className="ds-small mt-2 max-w-2xl text-muted-foreground">
-              Simulate where your strongest thesis ideas could lead using your profile and previous inputs.
+              Meet your future self through your strongest thesis paths.
             </p>
           </div>
             <div className="flex min-w-0 gap-2 overflow-x-auto">
-              {stages.map((item, index) => {
-                const isActive = item.id === stage;
-                const isCompleted = stages.findIndex((stageItem) => stageItem.id === stage) > index;
+              {visibleStages.map((item, index) => {
+                const isActive = item.id === activeVisibleStage;
+                const isCompleted = currentVisibleStageIndex > index;
                 const isReachable = reachableStages[item.id];
                 const isClickable = isReachable && index <= currentStageIndex && !isActive;
                 return (
@@ -2334,11 +2501,12 @@ const ThesisFinder = () => {
               />
             )}
 
-            {stage === "build" && futureSession && currentGraphBuild && currentSwarm && (
+            {stage === "build" && futureSession && currentGraphBuild && currentSwarm && currentFinalization && (
               <BuildFutureStage
                 futureSession={futureSession}
                 graphBuild={currentGraphBuild}
                 swarm={currentSwarm}
+                finalization={currentFinalization}
                 matchingNote={matchingNote}
                 onContinue={handleContinueToExplore}
               />

@@ -559,33 +559,7 @@ export const LiveFuturePathGraph = ({
             </div>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="rounded-[1.25rem] border border-border bg-muted/20 p-4">
-              <p className="ds-caption uppercase tracking-[0.16em] text-muted-foreground">Connections</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {preparedEdges.length > 0 ? (
-                  preparedEdges.map((edge) => {
-                    const sourceNode = preparedNodes.find((node) => node.id === edge.source);
-                    const targetNode = preparedNodes.find((node) => node.id === edge.target);
-
-                    return (
-                      <span
-                        key={edge.id}
-                        className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground shadow-sm"
-                      >
-                        {sourceNode?.displayLabel ?? "Stakeholder"} • {edge.displayLabel} •{" "}
-                        {targetNode?.displayLabel ?? "Stakeholder"}
-                      </span>
-                    );
-                  })
-                ) : (
-                  <p className="ds-small text-muted-foreground">
-                    Connections will show up here as soon as MiroFish sends them through.
-                  </p>
-                )}
-              </div>
-            </div>
-
+          <div>
             <div className="rounded-[1.25rem] border border-border bg-card p-4 shadow-sm">
               <p className="ds-caption uppercase tracking-[0.16em] text-muted-foreground">Selected stakeholder</p>
               {selectedNode ? (

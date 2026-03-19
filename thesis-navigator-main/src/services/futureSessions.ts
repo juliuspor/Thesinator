@@ -13,10 +13,22 @@ export type FutureEntitySummary = {
   href?: string | null;
 };
 
+export type SwarmImpactDecision = "up" | "steady" | "down";
+
+export type SwarmImpact = {
+  decision: SwarmImpactDecision;
+  display_delta: number;
+  why_this_path: string;
+  future_self_angle: string;
+  risks: string[];
+  evidence: string[];
+};
+
 export type FutureCard = {
   future_id: string;
   source: FutureSource;
   rank: number;
+  display_rank: number;
   future_headline: string;
   future_role: string;
   future_organization: string;
@@ -36,6 +48,7 @@ export type FutureCard = {
   };
   saved: boolean;
   simulation_status: SimulationStatus;
+  swarm_impact: SwarmImpact | null;
 };
 
 export type FutureDetail = {
@@ -137,9 +150,19 @@ export type SwarmState = {
   };
 };
 
+export type FinalizationStatus = "queued" | "preparing" | "ready" | "failed";
+
+export type FinalizationState = {
+  status: FinalizationStatus;
+  stage_label: string | null;
+  progress: number;
+  error: string | null;
+};
+
 export type FutureViewState = {
   graph_build: GraphBuildState;
   swarm: SwarmState;
+  finalization: FinalizationState;
 };
 
 export type FutureSessionState = {
@@ -151,6 +174,7 @@ export type FutureSessionState = {
   selected_future_id?: string | null;
   graph_build: GraphBuildState;
   swarm: SwarmState;
+  finalization: FinalizationState;
 };
 
 export type FutureDetailResponse = {
@@ -159,6 +183,7 @@ export type FutureDetailResponse = {
   simulation_status: SimulationStatus;
   map_nodes: FutureMapNode[];
   suggested_prompts: string[];
+  swarm_impact: SwarmImpact | null;
   chat_history: FutureChatMessage[];
 };
 

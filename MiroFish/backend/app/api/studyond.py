@@ -529,6 +529,105 @@ def _fallback_prompts(future_card: Dict[str, Any]) -> List[str]:
     ]
 
 
+def _swarm_highlight_excerpt(highlight: Dict[str, Any]) -> str:
+    platform = _string(highlight.get("platform")) or "the swarm"
+    agent_name = _string(highlight.get("agent_name")) or "an agent"
+    action_type = _string(highlight.get("action_type")).replace("_", " ").strip().lower() or "acted"
+    result = _string(highlight.get("result"))
+    action_args = highlight.get("action_args") if isinstance(highlight.get("action_args"), dict) else {}
+    content = ""
+    if isinstance(action_args, dict):
+        for key in ["content", "text", "post_content"]:
+            candidate = _string(action_args.get(key))
+            if candidate:
+                content = candidate
+                break
+
+    body = result or content
+    if body:
+        return _truncate(f"{agent_name} on {platform} {action_type}: {body}", 180)
+    return _truncate(f"{agent_name} on {platform} {action_type}.", 180)
+
+
+def _fallback_swarm_impact(future_card: Dict[str, Any], swarm_highlights: List[Dict[str, Any]]) -> Dict[str, Any]:
+    thesis_title = _string(future_card.get("thesis_title")) or "this thesis"
+    future_org = _string(future_card.get("future_organization")) or "the target organization"
+    why_fit = _string(future_card.get("why_fit")) or f"{thesis_title} stayed close to the student's stated direction."
+    evidence = [
+        _swarm_highlight_excerpt(highlight)
+        for highlight in swarm_highlights[:3]
+        if isinstance(highlight, dict)
+    ]
+    if not evidence:
+        evidence = [
+            _truncate(
+                f"The finished swarm still kept {thesis_title} aligned with the people and organizations around {future_org}.",
+                180,
+            )
+        ]
+
+    return {
+        "decision": "steady",
+        "display_delta": 0,
+        "why_this_path": why_fit,
+        "future_self_angle": (
+            f"I would talk about {thesis_title} as the path that became visible early and earned trust around {future_org}."
+        ),
+        "risks": [
+            f"If {thesis_title} stays too broad, it becomes harder to make the work legible early.",
+            "If you wait too long to involve the right people, momentum arrives later than it should.",
+            "If the thesis never turns into a visible proof point, the future path weakens quickly.",
+        ],
+        "evidence": evidence[:3],
+    }
+
+
+def _normalize_swarm_impact(
+    candidate: Any,
+    future_card: Dict[str, Any],
+    swarm_highlights: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    fallback = _fallback_swarm_impact(future_card, swarm_highlights)
+    if not isinstance(candidate, dict):
+        return fallback
+
+    decision = _string(candidate.get("decision")).lower()
+    display_delta = candidate.get("display_delta")
+    if not isinstance(display_delta, int):
+        if isinstance(display_delta, float):
+            display_delta = int(round(display_delta))
+        else:
+            display_delta = fallback["display_delta"]
+
+    return {
+        "decision": decision if decision in {"up", "steady", "down"} else fallback["decision"],
+        "display_delta": max(-2, min(2, int(display_delta))),
+        "why_this_path": _string(candidate.get("why_this_path")) or fallback["why_this_path"],
+        "future_self_angle": _string(candidate.get("future_self_angle")) or fallback["future_self_angle"],
+        "risks": (_list_of_strings(candidate.get("risks")) or fallback["risks"])[:3],
+        "evidence": (_list_of_strings(candidate.get("evidence")) or fallback["evidence"])[:3],
+    }
+
+
+def _normalize_finalized_future(
+    candidate: Optional[Dict[str, Any]],
+    future_id: str,
+    future_card: Dict[str, Any],
+    swarm_highlights: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    candidate = candidate if isinstance(candidate, dict) else {}
+    fallback_detail = _fallback_detail(future_card)
+    candidate_detail = candidate.get("future_detail") if isinstance(candidate.get("future_detail"), dict) else {}
+    detail = {**fallback_detail, **candidate_detail}
+
+    return {
+        "future_id": future_id,
+        "swarm_impact": _normalize_swarm_impact(candidate.get("swarm_impact"), future_card, swarm_highlights),
+        "future_detail": detail,
+        "suggested_prompts": (_list_of_strings(candidate.get("suggested_prompts")) or _fallback_prompts(future_card))[:4],
+    }
+
+
 def _run_graph_build(project_id: str, task_id: str) -> None:
     task_manager = TaskManager()
     project = ProjectManager.get_project(project_id)
@@ -1172,6 +1271,156 @@ def prepare_studyond_future():
 
     except Exception as error:
         logger.error(f"Studyond future prepare failed: {error}")
+        return jsonify({
+            "success": False,
+            "error": str(error),
+        }), 500
+
+
+@studyond_bp.route("/futures/finalize-session", methods=["POST"])
+def finalize_studyond_session_futures():
+    try:
+        payload = request.get_json() or {}
+        session_context = payload.get("session_context") if isinstance(payload.get("session_context"), dict) else {}
+        swarm_highlights = payload.get("swarm_highlights") if isinstance(payload.get("swarm_highlights"), list) else []
+        scenario_description = (
+            _string(payload.get("scenario_description"))
+            or _string(payload.get("scenario_prompt"))
+            or "Studyond thesis outcome synthesis"
+        )
+
+        raw_future_cards = payload.get("future_cards") if isinstance(payload.get("future_cards"), list) else []
+        future_cards: List[Dict[str, Any]] = []
+        for item in raw_future_cards:
+            if not isinstance(item, dict):
+                continue
+            future_id = _string(item.get("future_id"))
+            future_card = item.get("future_card") if isinstance(item.get("future_card"), dict) else (
+                item.get("card") if isinstance(item.get("card"), dict) else {}
+            )
+            seed_text = _string(item.get("seed_text"))
+            if not future_id or not isinstance(future_card, dict) or not future_card:
+                continue
+            future_cards.append({
+                "future_id": future_id,
+                "future_card": future_card,
+                "seed_text": seed_text,
+            })
+
+        if not future_cards:
+            return jsonify({
+                "success": False,
+                "error": "Missing future_cards"
+            }), 400
+
+        client = LLMClient()
+        llm_result = client.chat_json(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a Studyond thesis-outcome synthesizer inside the MiroFish backend. "
+                        "Use the finished swarm evidence to explain which thesis paths strengthened, weakened, or stayed steady. "
+                        "Return only JSON."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "task": (
+                                "For every thesis future card, decide how the completed swarm run changes the path, "
+                                "then generate the future-self detail package for the student-facing product. "
+                                "Keep the tone grounded, pitch-safe, and specific. "
+                                "Do not mention internal tools or simulation engines."
+                            ),
+                            "scenario_description": scenario_description,
+                            "session_context": session_context,
+                            "swarm_highlights": swarm_highlights[:8],
+                            "future_cards": [
+                                {
+                                    "future_id": item["future_id"],
+                                    "future_card": item["future_card"],
+                                    "seed_text_excerpt": (_string(item.get("seed_text")) or "")[:1600],
+                                }
+                                for item in future_cards
+                            ],
+                            "output_schema": {
+                                "finalized_futures": [
+                                    {
+                                        "future_id": "string",
+                                        "swarm_impact": {
+                                            "decision": "up|steady|down",
+                                            "display_delta": "integer between -2 and 2",
+                                            "why_this_path": "string",
+                                            "future_self_angle": "string",
+                                            "risks": ["string"],
+                                            "evidence": ["string"],
+                                        },
+                                        "future_detail": {
+                                            "hero_title": "string",
+                                            "hero_summary": "string",
+                                            "opening_note": "string",
+                                            "why_this_path": "string",
+                                            "future_self_intro": "string",
+                                            "story_beat": "string",
+                                            "persona_brief": "string",
+                                            "milestones": [
+                                                {
+                                                    "title": "string",
+                                                    "detail": "string",
+                                                }
+                                            ],
+                                        },
+                                        "suggested_prompts": ["string"],
+                                    }
+                                ],
+                            },
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                },
+            ],
+            temperature=0.35,
+            max_tokens=3200,
+        )
+
+        if not isinstance(llm_result, dict):
+            raise ValueError("Session finalization returned an invalid payload")
+
+        raw_results = llm_result.get("finalized_futures")
+        if not isinstance(raw_results, list):
+            raise ValueError("Session finalization did not return finalized_futures")
+
+        result_map: Dict[str, Dict[str, Any]] = {}
+        for item in raw_results:
+            if not isinstance(item, dict):
+                continue
+            future_id = _string(item.get("future_id"))
+            if not future_id:
+                continue
+            result_map[future_id] = item
+
+        finalized_futures = [
+            _normalize_finalized_future(
+                result_map.get(item["future_id"]),
+                item["future_id"],
+                item["future_card"],
+                swarm_highlights,
+            )
+            for item in future_cards
+        ]
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "finalized_futures": finalized_futures,
+            },
+        })
+
+    except Exception as error:
+        logger.error(f"Studyond session finalization failed: {error}")
         return jsonify({
             "success": False,
             "error": str(error),
