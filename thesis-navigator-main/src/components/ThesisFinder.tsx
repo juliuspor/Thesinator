@@ -124,7 +124,21 @@ type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
 const FUTURE_SESSION_STORAGE_KEY = "starthack-active-future-session";
 const ACTIVE_FUTURE_STORAGE_KEY = "starthack-active-future-selection";
+const THESINATOR_STORAGE_KEY = "starthack-active-thesinator-session";
+const DISCOVER_SUMMARY_STORAGE_KEY = "starthack-discover-summary";
 const THESINATOR_QUESTION_COUNT = 3;
+
+type ThesinatorStorageState = {
+  sessionId: string;
+  clientToken: string | null;
+  questions: BackendQuestion[];
+  turns: ConversationTurn[];
+  currentQuestionIndex: number;
+  finalAssistantMessage: string | null;
+  contextSnapshot: ContextSnapshot | null;
+  isComplete: boolean;
+  pinnedTurnIds: number[];
+};
 
 const inputModeLabels: Record<InputMode, string> = {
   mcq: "MCQ",
@@ -241,6 +255,66 @@ const writeActiveFutureStorage = (futureSessionId: string, futureId: string | nu
   }
 
   window.sessionStorage.removeItem(key);
+};
+
+const readThesinatorStorage = (): ThesinatorStorageState | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.sessionStorage.getItem(THESINATOR_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as ThesinatorStorageState;
+  } catch {
+    return null;
+  }
+};
+
+const writeThesinatorStorage = (state: ThesinatorStorageState | null) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (state) {
+    window.sessionStorage.setItem(THESINATOR_STORAGE_KEY, JSON.stringify(state));
+    return;
+  }
+
+  window.sessionStorage.removeItem(THESINATOR_STORAGE_KEY);
+};
+
+const readDiscoverSummaryStorage = (): CompletedDiscoverPayload | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.sessionStorage.getItem(DISCOVER_SUMMARY_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as CompletedDiscoverPayload;
+  } catch {
+    return null;
+  }
+};
+
+const writeDiscoverSummaryStorage = (payload: CompletedDiscoverPayload | null) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (payload) {
+    window.sessionStorage.setItem(DISCOVER_SUMMARY_STORAGE_KEY, JSON.stringify(payload));
+    return;
+  }
+
+  window.sessionStorage.removeItem(DISCOVER_SUMMARY_STORAGE_KEY);
 };
 
 const mergeFutureSessionState = (session: FutureSessionState, updatedFuture: FutureCard): FutureSessionState => ({
@@ -1043,11 +1117,15 @@ const DiscoverStage = ({
   isCreatingFutureSession,
   onCreateFutureSession,
   onComplete,
+  restoredThesinatorState,
+  onThesinatorStateChange,
 }: {
   summary: CompletedDiscoverPayload | null;
   isCreatingFutureSession: boolean;
   onCreateFutureSession: () => void;
   onComplete: (payload: CompletedDiscoverPayload) => void;
+  restoredThesinatorState: ThesinatorStorageState | null;
+  onThesinatorStateChange: (state: ThesinatorStorageState) => void;
 }) => (
   <div className="space-y-8">
     <div className="space-y-5">
@@ -1095,7 +1173,7 @@ const DiscoverStage = ({
           <p className="ds-caption uppercase tracking-[0.18em] text-muted-foreground">Discover</p>
           <h2 className="ds-title-md mt-2 text-foreground">Tell us what you want</h2>
         </div>
-        <StepGenieChat onComplete={onComplete} />
+        <StepGenieChat onComplete={onComplete} restoredState={restoredThesinatorState} onStateChange={onThesinatorStateChange} />
       </div>
     </div>
   </div>
@@ -1706,7 +1784,15 @@ const buildFallbackMapNodes = (future: FutureCard): FutureMapNode[] => {
   return nodes;
 };
 
-const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscoverPayload) => void }) => {
+const StepGenieChat = ({
+  onComplete,
+  restoredState,
+  onStateChange,
+}: {
+  onComplete: (payload: CompletedDiscoverPayload) => void;
+  restoredState: ThesinatorStorageState | null;
+  onStateChange: (state: ThesinatorStorageState) => void;
+}) => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [clientToken, setClientToken] = useState<string | null>(null);
   const [questions, setQuestions] = useState<BackendQuestion[]>([]);
@@ -1720,6 +1806,7 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
   const [isComplete, setIsComplete] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pinnedTurnIds, setPinnedTurnIds] = useState<Set<number>>(new Set());
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const activeTurn = !isComplete && turns.length > 0 ? turns[turns.length - 1] : null;
@@ -1746,6 +1833,38 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
     void audio.play().catch(() => setIsSpeaking(false));
   }, []);
 
+  const buildStateSnapshot = useCallback(
+    (overrides?: Partial<ThesinatorStorageState>): ThesinatorStorageState | null => {
+      const sid = overrides?.sessionId ?? sessionId;
+      if (!sid) {
+        return null;
+      }
+
+      return {
+        sessionId: sid,
+        clientToken: overrides?.clientToken ?? clientToken,
+        questions: overrides?.questions ?? questions,
+        turns: overrides?.turns ?? turns,
+        currentQuestionIndex: overrides?.currentQuestionIndex ?? currentQuestionIndex,
+        finalAssistantMessage: overrides?.finalAssistantMessage ?? finalAssistantMessage,
+        contextSnapshot: overrides?.contextSnapshot ?? contextSnapshot,
+        isComplete: overrides?.isComplete ?? isComplete,
+        pinnedTurnIds: overrides?.pinnedTurnIds ?? Array.from(pinnedTurnIds),
+      };
+    },
+    [clientToken, contextSnapshot, currentQuestionIndex, finalAssistantMessage, isComplete, pinnedTurnIds, questions, sessionId, turns],
+  );
+
+  const reportState = useCallback(
+    (overrides?: Partial<ThesinatorStorageState>) => {
+      const snapshot = buildStateSnapshot(overrides);
+      if (snapshot) {
+        onStateChange(snapshot);
+      }
+    },
+    [buildStateSnapshot, onStateChange],
+  );
+
   const bootstrapSession = useCallback(async () => {
     setIsLoadingSession(true);
     setError(null);
@@ -1758,6 +1877,7 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
     setClientToken(null);
     setContextSnapshot(null);
     setTextInput("");
+    setPinnedTurnIds(new Set());
 
     try {
       const start = await startThesinatorSession();
@@ -1765,25 +1885,52 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
       setSessionId(start.session_id);
       setClientToken(start.client_token);
       setQuestions(preloadedQuestions);
-      setTurns([
+      const initialTurns: ConversationTurn[] = [
         {
           question: start.question,
           assistantMessage: start.assistant_reply,
           userAnswer: null,
         },
-      ]);
+      ];
+      setTurns(initialTurns);
       setCurrentQuestionIndex(start.question_index);
       playAudio(start.audio_b64);
+
+      onStateChange({
+        sessionId: start.session_id,
+        clientToken: start.client_token,
+        questions: preloadedQuestions,
+        turns: initialTurns,
+        currentQuestionIndex: start.question_index,
+        finalAssistantMessage: null,
+        contextSnapshot: null,
+        isComplete: false,
+        pinnedTurnIds: [],
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start Thesinator.");
     } finally {
       setIsLoadingSession(false);
     }
-  }, [playAudio]);
+  }, [onStateChange, playAudio]);
 
   useEffect(() => {
-    void bootstrapSession();
-  }, [bootstrapSession]);
+    if (restoredState) {
+      setSessionId(restoredState.sessionId);
+      setClientToken(restoredState.clientToken);
+      setQuestions(restoredState.questions);
+      setTurns(restoredState.turns);
+      setCurrentQuestionIndex(restoredState.currentQuestionIndex);
+      setFinalAssistantMessage(restoredState.finalAssistantMessage);
+      setContextSnapshot(restoredState.contextSnapshot);
+      setIsComplete(restoredState.isComplete);
+      setPinnedTurnIds(new Set(restoredState.pinnedTurnIds));
+      setIsLoadingSession(false);
+    } else {
+      void bootstrapSession();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -1855,6 +2002,16 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
             topTopics: completionTopics,
             matchingMeta: result.matching_meta ?? null,
           });
+
+          reportState({
+            sessionId: result.session_id,
+            clientToken: result.client_token ?? clientToken,
+            turns: nextTurns,
+            currentQuestionIndex: result.question_index,
+            finalAssistantMessage: result.assistant_reply,
+            contextSnapshot: result.context_snapshot ?? null,
+            isComplete: true,
+          });
           return;
         }
 
@@ -1862,14 +2019,21 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
           throw new Error("Thesinator did not return the next question.");
         }
 
-        setTurns([
+        const updatedTurns: ConversationTurn[] = [
           ...nextTurns,
           {
             question: result.next_question,
             assistantMessage: result.assistant_reply,
             userAnswer: null,
           },
-        ]);
+        ];
+        setTurns(updatedTurns);
+
+        reportState({
+          clientToken: result.client_token ?? clientToken,
+          turns: updatedTurns,
+          currentQuestionIndex: result.question_index,
+        });
       } catch (err) {
         const revertedTurns = [...nextTurns];
         revertedTurns[revertedTurns.length - 1] = {
@@ -1882,7 +2046,7 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
         setIsSubmitting(false);
       }
     },
-    [activeQuestion, clientToken, currentQuestionIndex, isComplete, isSubmitting, onComplete, playAudio, questions, sessionId, turns],
+    [activeQuestion, clientToken, currentQuestionIndex, isComplete, isSubmitting, onComplete, playAudio, questions, reportState, sessionId, turns],
   );
 
   const captureSpeechTranscript = useCallback(
@@ -2088,7 +2252,7 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
         {error && (
           <div className="mt-3 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3">
             <p className="ds-small text-destructive">{error}</p>
-            <Button onClick={() => void bootstrapSession()} variant="outline" className="mt-3 rounded-full">
+            <Button onClick={() => { writeThesinatorStorage(null); writeDiscoverSummaryStorage(null); void bootstrapSession(); }} variant="outline" className="mt-3 rounded-full">
               Restart Thesinator
             </Button>
           </div>
@@ -2123,6 +2287,13 @@ const ThesisFinder = () => {
   const [isGeneratedExpanded, setIsGeneratedExpanded] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [screenError, setScreenError] = useState<string | null>(null);
+  const [thesinatorState, setThesinatorState] = useState<ThesinatorStorageState | null>(null);
+  const [thesinatorStateLoaded, setThesinatorStateLoaded] = useState(false);
+
+  const handleThesinatorStateChange = useCallback((state: ThesinatorStorageState) => {
+    setThesinatorState(state);
+    writeThesinatorStorage(state);
+  }, []);
 
   const syncFutureView = useCallback((nextFutureView: FutureViewState) => {
     setFutureView((prev) => ({
@@ -2143,6 +2314,18 @@ const ThesisFinder = () => {
   }, []);
 
   useEffect(() => {
+    const storedThesinatorState = readThesinatorStorage();
+    if (storedThesinatorState) {
+      setThesinatorState(storedThesinatorState);
+    }
+
+    const storedDiscoverSummary = readDiscoverSummaryStorage();
+    if (storedDiscoverSummary) {
+      setDiscoverSummary(storedDiscoverSummary);
+    }
+
+    setThesinatorStateLoaded(true);
+
     const restoreFutureSession = async () => {
       const storedFutureSessionId = readFutureSessionStorage();
       if (!storedFutureSessionId) {
@@ -2276,6 +2459,7 @@ const ThesisFinder = () => {
   const handleDiscoverComplete = useCallback((payload: CompletedDiscoverPayload) => {
     setDiscoverSummary(payload);
     setScreenError(null);
+    writeDiscoverSummaryStorage(payload);
   }, []);
 
   const handleCreateSession = useCallback(async () => {
@@ -2555,12 +2739,14 @@ const ThesisFinder = () => {
           </div>
         ) : (
           <>
-            {stage === "discover" && (
+            {stage === "discover" && thesinatorStateLoaded && (
               <DiscoverStage
                 summary={discoverSummary}
                 isCreatingFutureSession={isCreatingFutureSession}
                 onCreateFutureSession={handleCreateSession}
                 onComplete={handleDiscoverComplete}
+                restoredThesinatorState={thesinatorState}
+                onThesinatorStateChange={handleThesinatorStateChange}
               />
             )}
 
