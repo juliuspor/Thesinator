@@ -10,11 +10,37 @@ MiroFish is a multi-agent prediction engine that extracts entities from document
 ## Service URLs
 
 When running locally, services are available at:
-- **Frontend UI:** `http://localhost:3000`
+- **Frontend UI:** `http://localhost:3000` (legacy/debug for this workspace)
 - **Backend API:** `http://localhost:5001`
 - **LiteLLM Proxy:** `http://0.0.0.0:4000`
 
+## Studyond Integration
+
+- The current STARTHack thesis experience uses `thesis-navigator-main/` as the only user-facing UI.
+- MiroFish is now used as a hidden engine through `backend/app/api/studyond.py`.
+- The thesis app expects a real event stream from the graph task; `GET /api/studyond/graph/task/<task_id>` should return ordered raw `events[]`, not just the latest status.
+- The Studyond adapter routes used by the thesis app are:
+  - `POST /api/studyond/graph/start`
+  - `GET /api/studyond/graph/task/<task_id>`
+  - `GET /api/studyond/graph/data/<graph_id>`
+  - `POST /api/studyond/futures/prepare`
+
 ## Running the App
+
+To start the full STARTHack stack from the repo root:
+```bash
+./start_all.sh
+```
+
+Notes:
+- `./start_all.sh` resets and reseeds the local Supabase database before boot.
+- It waits for LiteLLM and `http://127.0.0.1:5001/health` before starting the thesis frontend.
+- It starts the Flask backend with `FLASK_DEBUG=False` to avoid the dev reloader restart race.
+- It exports `MIROFISH_API_URL=http://host.docker.internal:5001` into the Supabase edge runtime automatically.
+- A local `MIROFISH_API_KEY` is optional; if present in `MiroFish/.env`, the launcher forwards it.
+- The edge runtime runs inside Docker, so `127.0.0.1:5001` only works from the host shell/browser. Edge functions must use `host.docker.internal:5001`.
+
+To run only MiroFish manually, use the processes below.
 
 To run the full stack manually, use three separate processes:
 
@@ -26,7 +52,7 @@ To run the full stack manually, use three separate processes:
 **2. Start Backend API (Flask)**
 ```bash
 cd backend
-./venv/bin/python3 run.py
+FLASK_DEBUG=False uv run python run.py
 ```
 
 **3. Start Frontend (Vue 3)**
@@ -51,6 +77,13 @@ This command will:
 The repo natively hardcodes OpenAI request format. We use local LiteLLM proxy interception.
 - Required env file: `./.env` (in `MiroFish/` root)
 - Required keys: `ANTHROPIC_API_KEY`, `ZEP_API_KEY`
+- `MIROFISH_API_KEY` is optional for local STARTHack integration.
+- If you manually run Supabase edge functions for the thesis stack, set `MIROFISH_API_URL=http://host.docker.internal:5001`, not `http://127.0.0.1:5001`.
+
+## Studyond Local Failure Mode
+
+- `See your future` failures are persisted in `future_sessions.graph_status`.
+- After fixing local startup or networking issues, create a new future session from the `Discover` step rather than reusing the previously failed one.
 
 ## Troubleshooting After Folder Moves
 

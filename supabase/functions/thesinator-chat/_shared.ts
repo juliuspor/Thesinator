@@ -50,27 +50,11 @@ export const THESINATOR_QUESTIONS: ThesinatorQuestion[] = [
   },
   {
     id: 2,
-    question: "How important is practical relevance in your thesis?",
-    options: ["Very important", "Important", "Neutral", "Less important", "Not important"],
-  },
-  {
-    id: 3,
     question: "Do you want to collaborate with a company?",
     options: ["Yes, definitely", "Probably yes", "Not sure", "Probably not", "No"],
   },
   {
-    id: 4,
-    question: "Which methodology do you prefer?",
-    options: [
-      "Quantitative (Data & Statistics)",
-      "Qualitative (Interviews & Analysis)",
-      "Mixed Methods",
-      "Design-Based (Prototyping)",
-      "No Preference",
-    ],
-  },
-  {
-    id: 5,
+    id: 3,
     question: "Where do you see yourself after graduation?",
     options: [
       "Large Company (Google, Apple...)",
@@ -78,22 +62,6 @@ export const THESINATOR_QUESTIONS: ThesinatorQuestion[] = [
       "Consulting (McKinsey...)",
       "Research & Academia",
       "Still Unsure",
-    ],
-  },
-  {
-    id: 6,
-    question: "How long should your thesis approximately take?",
-    options: ["3 months", "4-5 months", "6 months", "Longer than 6 months", "Flexible"],
-  },
-  {
-    id: 7,
-    question: "Which topic excites you the most?",
-    options: [
-      "Artificial Intelligence",
-      "Sustainability & Green Tech",
-      "Digital Transformation",
-      "Platform Economics",
-      "Cybersecurity",
     ],
   },
 ];
@@ -255,5 +223,5 @@ export const isInputMode = (value: unknown): value is InputMode => {
 };
 
 export const defaultAssistantIntro = (firstQuestion: ThesinatorQuestion): string => {
-  return `Hi, I am Thesinator. I will ask seven short questions and adapt my guidance based on your answers. Let's start: ${firstQuestion.question}`;
+  return `Hi, I am Thesinator. I will ask three short questions and adapt my guidance based on your answers. Let's start: ${firstQuestion.question}`;
 };

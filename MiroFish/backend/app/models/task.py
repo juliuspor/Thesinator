@@ -7,7 +7,7 @@ import uuid
 import threading
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 
 
@@ -33,6 +33,7 @@ class Task:
     error: Optional[str] = None    # 错误信息
     metadata: Dict = field(default_factory=dict)  # 额外元数据
     progress_detail: Dict = field(default_factory=dict)  # 详细进度信息
+    events: List[Dict[str, Any]] = field(default_factory=list)  # 原始事件流
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -48,6 +49,7 @@ class Task:
             "result": self.result,
             "error": self.error,
             "metadata": self.metadata,
+            "events": self.events,
         }
 
 
@@ -90,7 +92,17 @@ class TaskManager:
             status=TaskStatus.PENDING,
             created_at=now,
             updated_at=now,
-            metadata=metadata or {}
+            metadata=metadata or {},
+            events=[
+                {
+                    "timestamp": now.isoformat(),
+                    "status": TaskStatus.PENDING.value,
+                    "progress": 0,
+                    "message": "Task created",
+                    "stage_label": None,
+                    "error": None,
+                }
+            ],
         )
         
         with self._task_lock:
@@ -141,6 +153,34 @@ class TaskManager:
                     task.error = error
                 if progress_detail is not None:
                     task.progress_detail = progress_detail
+                self._append_event_locked(task)
+
+    def _append_event_locked(self, task: Task):
+        """在持锁状态下为任务追加事件"""
+        stage_label = None
+        if isinstance(task.progress_detail, dict):
+            stage_label = task.progress_detail.get("stage_label")
+
+        event = {
+            "timestamp": task.updated_at.isoformat(),
+            "status": task.status.value,
+            "progress": task.progress,
+            "message": task.message,
+            "stage_label": stage_label,
+            "error": task.error,
+        }
+
+        last_event = task.events[-1] if task.events else None
+        if last_event and (
+            last_event.get("status") == event["status"]
+            and last_event.get("progress") == event["progress"]
+            and last_event.get("message") == event["message"]
+            and last_event.get("stage_label") == event["stage_label"]
+            and last_event.get("error") == event["error"]
+        ):
+            return
+
+        task.events.append(event)
     
     def complete_task(self, task_id: str, result: Dict):
         """标记任务完成"""
