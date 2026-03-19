@@ -313,14 +313,50 @@ const SpeechBubble = ({ text }: {text: string;}) =>
   </div>
   </div>;
 
+const inputModeLabels: Record<InputMode, string> = {
+  mcq: "MCQ",
+  text: "TEXT",
+  speech: "SPEECH",
+};
+
+const UserSpeechBubble = ({
+  text,
+  isLive,
+  modeLabel,
+}: {
+  text: string;
+  isLive?: boolean;
+  modeLabel?: string;
+}) =>
+<div className="relative mb-4 ml-auto max-w-2xl">
+    <div className="relative rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 shadow-sm">
+      {modeLabel &&
+      <p className="mb-1 ds-caption text-primary font-semibold tracking-wide">{modeLabel}</p>
+      }
+      <p className="ds-body whitespace-pre-line text-foreground">{text}</p>
+      {isLive &&
+      <p className="mt-1 ds-caption text-muted-foreground">Listening...</p>
+      }
+    </div>
+  </div>;
+
 
 /* Voice Input Hook */
 type SpeechRecognitionResultItem = {
   transcript: string;
 };
 
+type SpeechRecognitionResultShape = ArrayLike<SpeechRecognitionResultItem> & {
+  isFinal: boolean;
+};
+
 type SpeechRecognitionEventShape = {
-  results: ArrayLike<ArrayLike<SpeechRecognitionResultItem>>;
+  results: ArrayLike<SpeechRecognitionResultShape>;
+};
+
+type SpeechRecognitionErrorEventShape = {
+  error: string;
+  message?: string;
 };
 
 type BrowserSpeechRecognition = {
@@ -330,7 +366,7 @@ type BrowserSpeechRecognition = {
   start: () => void;
   stop: () => void;
   onresult: ((event: SpeechRecognitionEventShape) => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventShape) => void) | null;
   onend: (() => void) | null;
 };
 
@@ -338,10 +374,22 @@ type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
 const useVoiceInput = (onResult: (text: string) => void) => {
   const [isListening, setIsListening] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState("");
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const manuallyStoppedRef = useRef(false);
+  const finalTranscriptRef = useRef("");
+  const lastLiveTranscriptRef = useRef("");
+  const transcriptDeliveredRef = useRef(false);
+
+  const clearSpeechError = () => setSpeechError(null);
 
   const stopListening = () => {
-    recognitionRef.current?.stop();
+    if (recognitionRef.current) {
+      manuallyStoppedRef.current = true;
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
     setIsListening(false);
   };
 
@@ -358,40 +406,132 @@ const useVoiceInput = (onResult: (text: string) => void) => {
 
     const SpeechRecognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported in this browser.");
+      setSpeechError(
+        "Speech recognition is not supported in this browser. You can still answer with text or options.",
+      );
       return;
     }
 
+    clearSpeechError();
+    setLiveTranscript("");
+    finalTranscriptRef.current = "";
+    lastLiveTranscriptRef.current = "";
+    transcriptDeliveredRef.current = false;
+    manuallyStoppedRef.current = false;
+
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
-    recognition.interimResults = false;
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event: SpeechRecognitionEventShape) => {
-      const transcript = event.results[0][0].transcript;
-      onResult(transcript);
-      setIsListening(false);
+      const finalParts: string[] = [];
+      const interimParts: string[] = [];
+
+      for (let index = 0; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const transcript = result?.[0]?.transcript?.trim() ?? "";
+        if (!transcript) {
+          continue;
+        }
+
+        if (result.isFinal) {
+          finalParts.push(transcript);
+        } else {
+          interimParts.push(transcript);
+        }
+      }
+
+      const finalTranscript = finalParts.join(" ").trim();
+      if (finalTranscript) {
+        finalTranscriptRef.current = finalTranscript;
+      }
+
+      const live = [finalTranscript || finalTranscriptRef.current, interimParts.join(" ").trim()]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      lastLiveTranscriptRef.current = live;
+      setLiveTranscript(live);
+      clearSpeechError();
     };
 
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
+    recognition.onerror = (event: SpeechRecognitionErrorEventShape) => {
+      setIsListening(false);
+      setLiveTranscript("");
+      lastLiveTranscriptRef.current = "";
+      recognitionRef.current = null;
+
+      if (event.error === "aborted" && manuallyStoppedRef.current) {
+        manuallyStoppedRef.current = false;
+        return;
+      }
+
+      manuallyStoppedRef.current = false;
+
+      switch (event.error) {
+        case "not-allowed":
+        case "service-not-allowed":
+          setSpeechError("Microphone access was denied. Please allow microphone access and try again.");
+          break;
+        case "no-speech":
+          setSpeechError("No speech detected. Please speak clearly and try again.");
+          break;
+        case "aborted":
+          setSpeechError("Voice input was interrupted. Please try again.");
+          break;
+        default:
+          setSpeechError("Voice recognition failed. Please try again or answer with text.");
+          break;
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+      manuallyStoppedRef.current = false;
+
+      const finalTranscript = finalTranscriptRef.current.trim() || lastLiveTranscriptRef.current.trim();
+      if (finalTranscript && !transcriptDeliveredRef.current) {
+        transcriptDeliveredRef.current = true;
+        setLiveTranscript(finalTranscript);
+        onResult(finalTranscript);
+      }
+    };
 
     recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch {
+      recognitionRef.current = null;
+      setIsListening(false);
+      setLiveTranscript("");
+      lastLiveTranscriptRef.current = "";
+      manuallyStoppedRef.current = false;
+      setSpeechError("Could not start voice input. Please try again or answer with text.");
+    }
   };
 
-  return { isListening, toggleListening, stopListening };
+  return { isListening, liveTranscript, speechError, toggleListening, stopListening };
 };
 
 /* Step 2 */
+type ConversationTurn = {
+  question: BackendQuestion;
+  assistantMessage: string;
+  userAnswer: {
+    text: string;
+    inputMode: InputMode;
+  } | null;
+};
+
 const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [clientToken, setClientToken] = useState<string | null>(null);
-  const [currentQuestion, setCurrentQuestion] = useState<BackendQuestion | null>(null);
-  const [questionIndex, setQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [assistantMessage, setAssistantMessage] = useState("");
+  const [turns, setTurns] = useState<ConversationTurn[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [finalAssistantMessage, setFinalAssistantMessage] = useState<string | null>(null);
   const [contextSnapshot, setContextSnapshot] = useState<ContextSnapshot | null>(null);
   const [textInput, setTextInput] = useState("");
   const [isLoadingSession, setIsLoadingSession] = useState(true);
@@ -400,6 +540,11 @@ const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const conversationScrollRef = useRef<HTMLDivElement | null>(null);
+  const conversationEndRef = useRef<HTMLDivElement | null>(null);
+
+  const activeTurn = !isComplete && turns.length > 0 ? turns[turns.length - 1] : null;
+  const activeQuestion = activeTurn?.question ?? null;
 
   const playAudio = useCallback((audioBase64: string | null) => {
     if (!audioBase64) {
@@ -425,11 +570,11 @@ const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
     setIsLoadingSession(true);
     setError(null);
     setIsComplete(false);
-    setAnswers({});
-    setQuestionIndex(0);
+    setTurns([]);
+    setCurrentQuestionIndex(0);
+    setFinalAssistantMessage(null);
     setSessionId(null);
     setClientToken(null);
-    setCurrentQuestion(null);
     setContextSnapshot(null);
     setTextInput("");
 
@@ -437,9 +582,14 @@ const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
       const start = await startThesinatorSession();
       setSessionId(start.session_id);
       setClientToken(start.client_token);
-      setCurrentQuestion(start.question);
-      setQuestionIndex(start.question_index);
-      setAssistantMessage(start.assistant_reply);
+      setTurns([
+        {
+          question: start.question,
+          assistantMessage: start.assistant_reply,
+          userAnswer: null,
+        },
+      ]);
+      setCurrentQuestionIndex(start.question_index);
       playAudio(start.audio_b64);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start Thesinator.");
@@ -462,7 +612,7 @@ const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
   }, []);
 
   const submitAnswer = useCallback(async (answer: string, inputMode: InputMode) => {
-    if (!sessionId || !currentQuestion || isSubmitting || isComplete) {
+    if (!sessionId || !activeQuestion || isSubmitting || isComplete) {
       return;
     }
 
@@ -471,42 +621,93 @@ const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
       return;
     }
 
-    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: trimmed }));
     setError(null);
     setTextInput("");
     setIsSubmitting(true);
+    setTurns((prev) => {
+      if (prev.length === 0) {
+        return prev;
+      }
+
+      const next = [...prev];
+      const lastTurn = next[next.length - 1];
+      next[next.length - 1] = {
+        ...lastTurn,
+        userAnswer: {
+          text: trimmed,
+          inputMode,
+        },
+      };
+      return next;
+    });
 
     try {
       const result = await sendThesinatorTurn({
         sessionId,
-        questionId: currentQuestion.id,
+        questionId: activeQuestion.id,
         userAnswer: trimmed,
         inputMode,
         clientToken,
       });
 
-      setAssistantMessage(result.assistant_reply);
       setClientToken((prev) => result.client_token ?? prev);
-      setQuestionIndex(result.question_index);
+      setCurrentQuestionIndex(result.question_index);
       playAudio(result.audio_b64);
 
       if (result.is_complete) {
         setIsComplete(true);
-        setCurrentQuestion(null);
+        setFinalAssistantMessage(result.assistant_reply);
         setContextSnapshot(result.context_snapshot ?? null);
       } else {
-        setCurrentQuestion(result.next_question ?? thesinatorQuestions[result.question_index] ?? null);
+        const nextQuestion = result.next_question ?? thesinatorQuestions[result.question_index] ?? null;
+        if (!nextQuestion) {
+          throw new Error("Missing next question from Thesinator.");
+        }
+
+        setTurns((prev) => [
+          ...prev,
+          {
+            question: nextQuestion,
+            assistantMessage: result.assistant_reply,
+            userAnswer: null,
+          },
+        ]);
       }
     } catch (err) {
+      setTurns((prev) => {
+        if (prev.length === 0) {
+          return prev;
+        }
+
+        const next = [...prev];
+        const lastTurn = next[next.length - 1];
+        next[next.length - 1] = {
+          ...lastTurn,
+          userAnswer: null,
+        };
+        return next;
+      });
       setError(err instanceof Error ? err.message : "Could not send answer.");
     } finally {
       setIsSubmitting(false);
     }
-  }, [clientToken, currentQuestion, isComplete, isSubmitting, playAudio, sessionId]);
+  }, [activeQuestion, clientToken, isComplete, isSubmitting, playAudio, sessionId]);
 
-  const { isListening, toggleListening, stopListening } = useVoiceInput((transcript) => {
-    void submitAnswer(transcript, "speech");
-  });
+  const captureSpeechTranscript = useCallback((transcript: string) => {
+    if (isSubmitting || isComplete || !activeQuestion) {
+      return;
+    }
+
+    const trimmed = transcript.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setError(null);
+    void submitAnswer(trimmed, "speech");
+  }, [activeQuestion, isComplete, isSubmitting, submitAnswer]);
+
+  const { isListening, liveTranscript, speechError, toggleListening, stopListening } = useVoiceInput(captureSpeechTranscript);
 
   useEffect(() => {
     if (isSubmitting || isComplete) {
@@ -514,10 +715,21 @@ const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
     }
   }, [isComplete, isSubmitting, stopListening]);
 
+  useEffect(() => {
+    const container = conversationScrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    const behavior: ScrollBehavior = isListening ? "auto" : "smooth";
+    container.scrollTo({ top: container.scrollHeight, behavior });
+    conversationEndRef.current?.scrollIntoView({ block: "end", behavior });
+  }, [turns, isSubmitting, isListening, liveTranscript, finalAssistantMessage, isComplete]);
+
   const totalQuestions = thesinatorQuestions.length;
-  const answeredCount = Object.keys(answers).length;
+  const answeredCount = turns.filter((turn) => turn.userAnswer !== null).length;
   const progress = Math.min((answeredCount / totalQuestions) * 100, 100);
-  const displayStep = isComplete ? totalQuestions : questionIndex + 1;
+  const displayStep = isComplete ? totalQuestions : currentQuestionIndex + 1;
 
   const handleTextSubmit = () => {
     void submitAnswer(textInput, "text");
@@ -532,107 +744,148 @@ const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
 
       {/* Question panel */}
       <div className="w-full flex-1 xl:max-w-xl">
-        {assistantMessage && <SpeechBubble text={assistantMessage} />}
-
-        {isLoadingSession && (
-          <div className="flex justify-center py-10">
+        {isLoadingSession &&
+        <div className="flex justify-center py-10">
             <span className="inline-flex gap-1.5">
               <span className="w-3 h-3 bg-primary rounded-full animate-bounce" />
               <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
               <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
             </span>
           </div>
-        )}
+        }
 
-        {!isLoadingSession && currentQuestion && (
-          <>
-            {/* Question header with number */}
-            <div className="flex items-center gap-4 mb-6">
-              <div className="bg-primary text-primary-foreground w-14 h-14 rounded-lg flex items-center justify-center ds-title-md font-bold relative">
-                <Sparkles size={12} className="absolute top-1.5 left-1/2 -translate-x-1/2 text-primary-foreground/60" />
-                {currentQuestion.id}
-                <Sparkles size={10} className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-primary-foreground/60" />
-              </div>
-              <div className="flex-1 bg-card border border-border rounded-lg px-5 py-4">
-                <p className="ds-title-cards text-foreground">{currentQuestion.question}</p>
-              </div>
+        {/* Progress */}
+        {!isLoadingSession &&
+        <div className="mb-4 flex items-center gap-3">
+            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-500 rounded-full"
+                style={{ width: `${progress}%` }} />
             </div>
+            <span className="ds-caption text-muted-foreground">{displayStep}/{totalQuestions}</span>
+          </div>
+        }
 
-            {/* Progress */}
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+        {!isLoadingSession &&
+        <div className="relative rounded-2xl border border-border bg-card/40 shadow-sm">
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-gradient-to-b from-card/95 to-transparent" />
+            <div
+            ref={conversationScrollRef}
+            role="log"
+            aria-live="polite"
+            className="max-h-[68vh] overflow-y-auto px-3 py-3 pr-4 space-y-4 overscroll-contain scroll-smooth [scrollbar-gutter:stable]">
+            {turns.map((turn, index) => {
+              const isActiveTurn = !isComplete && index === turns.length - 1;
+
+              return (
                 <div
-                  className="h-full bg-primary transition-all duration-500 rounded-full"
-                  style={{ width: `${progress}%` }} />
-              </div>
-              <span className="ds-caption text-muted-foreground">{displayStep}/{totalQuestions}</span>
-            </div>
+                  key={`${turn.question.id}-${index}`}
+                  className="space-y-3 animate-fade-in rounded-xl border border-border/70 bg-background/70 p-4">
+                  <SpeechBubble text={turn.assistantMessage} />
 
-            {/* Answer options */}
-            {!isSubmitting &&
-            <div className="space-y-3 mb-6 animate-fade-in">
-                {currentQuestion.options.map((option, i) =>
-              <button
-                key={i}
-                onClick={() => {
-                  void submitAnswer(option, "mcq");
-                }}
-                disabled={isSubmitting}
-                className={`w-full py-4 px-6 rounded-lg border text-center ds-body font-semibold transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed ${
-                answers[currentQuestion.id] === option ?
-                "bg-primary text-primary-foreground border-primary" :
-                "bg-card border-border text-foreground hover:border-primary/50 hover:shadow-md"}`
-                }>
-                    {option}
-                  </button>
-              )}
-              </div>
-            }
+                  <div className="flex items-center gap-4">
+                    <div className="bg-primary text-primary-foreground min-w-12 h-12 rounded-lg flex items-center justify-center ds-title-cards font-bold relative px-3">
+                      <Sparkles size={12} className="absolute top-1.5 left-1/2 -translate-x-1/2 text-primary-foreground/60" />
+                      Q{turn.question.id}
+                      <Sparkles size={10} className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-primary-foreground/60" />
+                    </div>
+                    <div className="flex-1 bg-card border border-border rounded-lg px-5 py-4">
+                      <p className="ds-title-cards text-foreground">{turn.question.question}</p>
+                    </div>
+                  </div>
 
-            {isSubmitting &&
-            <div className="flex justify-center py-12 animate-fade-in">
-                <span className="inline-flex gap-1.5">
-                  <span className="w-3 h-3 bg-primary rounded-full animate-bounce" />
-                  <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
-                  <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
-                </span>
-              </div>
-            }
-          </>
-        )}
+                  {turn.userAnswer &&
+                  <UserSpeechBubble
+                    text={turn.userAnswer.text}
+                    modeLabel={inputModeLabels[turn.userAnswer.inputMode]} />
+                  }
 
-        {/* Text/Voice input */}
-        <div className="border border-border rounded-lg bg-card p-3 flex gap-2">
-          <input
-            type="text"
-            value={textInput}
-            onChange={(e) => setTextInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleTextSubmit()}
-            placeholder="Or answer freely via text..."
-            disabled={isLoadingSession || isSubmitting || isComplete || !currentQuestion}
-            className="flex-1 bg-transparent ds-body outline-none placeholder:text-muted-foreground px-3 py-2 rounded-full border border-input focus:ring-2 focus:ring-ring/20 disabled:opacity-60" />
-          <Button
-            onClick={toggleListening}
-            size="icon"
-            variant={isListening ? "destructive" : "outline"}
-            className="rounded-full shrink-0"
-            disabled={isLoadingSession || isSubmitting || isComplete || !currentQuestion}
-            title={isListening ? "Stop recording" : "Speech input"}>
-            {isListening ? <MicOff size={16} /> : <Mic size={16} />}
-          </Button>
-          <Button
-            onClick={handleTextSubmit}
-            size="icon"
-            className="rounded-full shrink-0"
-            disabled={isLoadingSession || isSubmitting || isComplete || !currentQuestion}>
-            <Send size={16} />
-          </Button>
-        </div>
+                  {isActiveTurn && !turn.userAnswer && (
+                    <>
+                      {!isSubmitting &&
+                      <div className="space-y-3 animate-fade-in">
+                          {turn.question.options.map((option, optionIndex) =>
+                        <button
+                          key={optionIndex}
+                          onClick={() => {
+                            void submitAnswer(option, "mcq");
+                          }}
+                          disabled={isSubmitting}
+                          className="w-full py-4 px-6 rounded-lg border text-center ds-body font-semibold transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed bg-card border-border text-foreground hover:border-primary/50 hover:shadow-md">
+                              {option}
+                            </button>
+                        )}
+                        </div>
+                      }
 
-        {isListening &&
-        <div className="mt-2 flex items-center gap-2 text-destructive ds-small animate-fade-in">
-            <span className="w-2 h-2 bg-destructive rounded-full animate-pulse" />
-            Recording... speak now!
+                      {!isSubmitting && isListening && liveTranscript &&
+                      <UserSpeechBubble
+                        text={liveTranscript}
+                        isLive
+                        modeLabel={inputModeLabels.speech} />
+                      }
+
+                      {isSubmitting &&
+                      <div className="flex justify-center py-8 animate-fade-in">
+                          <span className="inline-flex gap-1.5">
+                            <span className="w-3 h-3 bg-primary rounded-full animate-bounce" />
+                            <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
+                            <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
+                          </span>
+                        </div>
+                      }
+
+                      <div className="sticky bottom-0 z-20 -mx-4 border-t border-border/70 bg-background/95 px-4 pb-2 pt-3 backdrop-blur">
+                        <div className="border border-border rounded-lg bg-card p-3 flex gap-2">
+                          <input
+                            type="text"
+                            value={textInput}
+                            onChange={(e) => setTextInput(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleTextSubmit()}
+                            placeholder="Or answer freely via text..."
+                            disabled={isSubmitting || isComplete}
+                            className="flex-1 bg-transparent ds-body outline-none placeholder:text-muted-foreground px-3 py-2 rounded-full border border-input focus:ring-2 focus:ring-ring/20 disabled:opacity-60" />
+                          <Button
+                            onClick={toggleListening}
+                            size="icon"
+                            variant={isListening ? "destructive" : "outline"}
+                            className="rounded-full shrink-0"
+                            disabled={isSubmitting || isComplete}
+                            title={isListening ? "Stop recording" : "Speech input"}>
+                            {isListening ? <MicOff size={16} /> : <Mic size={16} />}
+                          </Button>
+                          <Button
+                            onClick={handleTextSubmit}
+                            size="icon"
+                            className="rounded-full shrink-0"
+                            disabled={isSubmitting || isComplete}>
+                            <Send size={16} />
+                          </Button>
+                        </div>
+
+                        {isListening &&
+                        <div className="mt-1 flex items-center gap-2 text-destructive ds-small animate-fade-in">
+                            <span className="w-2 h-2 bg-destructive rounded-full animate-pulse" />
+                            Recording... speak now!
+                          </div>
+                        }
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            {isComplete && finalAssistantMessage && <SpeechBubble text={finalAssistantMessage} />}
+            <div ref={conversationEndRef} />
+          </div>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-10 bg-gradient-to-t from-card/95 to-transparent" />
+          </div>
+        }
+
+        {speechError &&
+        <div className="mt-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 animate-fade-in">
+            <p className="ds-small text-destructive">{speechError}</p>
           </div>
         }
 
