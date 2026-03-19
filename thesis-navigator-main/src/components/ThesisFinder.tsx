@@ -1,6 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Check, ArrowRight, Send, Sparkles, Users, Briefcase, Mic, MicOff, GraduationCap, TrendingUp, MessageCircle, ExternalLink, BookOpen, Footprints } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  sendThesinatorTurn,
+  startThesinatorSession,
+  type ContextSnapshot,
+  type InputMode,
+  type ThesinatorQuestion as BackendQuestion
+} from "@/services/thesinator";
 import thesinatorTalk1 from "@/assets/thesinator-talk1.png";
 import thesinatorTalk2 from "@/assets/thesinator-talk2.png";
 import thesinatorThinking from "@/assets/thesinator-thinking.png";
@@ -16,7 +23,7 @@ const steps = [
 { id: 2, label: "Thesinator" },
 { id: 3, label: "Thesis Matching" },
 { id: 4, label: "Simulation" },
-{ id: 5, label: "Ergebnisse" }];
+{ id: 5, label: "Results" }];
 
 
 const scenarios = [
@@ -26,18 +33,18 @@ const scenarios = [
   role: "Senior Software Engineer",
   probability: 78,
   thesis: "Machine Learning in Search Optimization",
-  thesisExplanation: "Diese Thesis untersucht, wie maschinelles Lernen die Relevanz und Effizienz von Suchalgorithmen verbessern kann – ein Kerngebiet von Googles Geschäftsmodell.",
-  whyThesisFits: "Deine Stärken in KI und Datenanalyse decken sich direkt mit den Anforderungen dieser Position. Die Thesis gibt dir hands-on Erfahrung mit den Technologien, die Google täglich einsetzt.",
-  careerSteps: ["Praktikum bei Google (6 Monate)", "Junior ML Engineer (1-2 Jahre)", "Mid-Level Engineer mit Spezialisierung (2-3 Jahre)", "Senior Software Engineer (ab Jahr 4)"],
+  thesisExplanation: "This thesis explores how machine learning can improve the relevance and efficiency of search algorithms, a core part of Google's business model.",
+  whyThesisFits: "Your strengths in AI and data analysis align directly with this role. The thesis gives you hands-on experience with technologies Google uses every day.",
+  careerSteps: ["Internship at Google (6 months)", "Junior ML Engineer (1-2 years)", "Mid-Level Engineer with specialization (2-3 years)", "Senior Software Engineer (from year 4)"],
   alumni: [
-    { name: "Dr. Maria Schmidt", role: "Research Scientist bei Google", linkedIn: "#" },
-    { name: "Jonas Weber", role: "ML Engineer bei Google DeepMind", linkedIn: "#" }
+    { name: "Dr. Maria Schmidt", role: "Research Scientist at Google", linkedIn: "#" },
+    { name: "Jonas Weber", role: "ML Engineer at Google DeepMind", linkedIn: "#" }
   ],
   professors: [
-    { name: "Prof. Dr. Weber", field: "Machine Learning Lab, TU München", link: "#" },
-    { name: "Prof. Dr. Hoffmann", field: "Data Science, TU München", link: "#" }
+    { name: "Prof. Dr. Weber", field: "Machine Learning Lab, TU Munich", link: "#" },
+    { name: "Prof. Dr. Hoffmann", field: "Data Science, TU Munich", link: "#" }
   ],
-  simulationDescription: "In dieser Simulation startest du nach deiner Thesis als Praktikant im Google Search Quality Team in Zürich. Innerhalb von 5 Jahren entwickelst du dich zum Senior Engineer, der ein eigenes Team von 8 Personen leitet und an der nächsten Generation der Suchmaschine arbeitet."
+  simulationDescription: "In this simulation, you start after your thesis as an intern on the Google Search Quality team in Zurich. Within 5 years, you grow into a Senior Engineer leading a team of 8 and building the next generation of search."
 },
 {
   image: futureApple,
@@ -45,18 +52,18 @@ const scenarios = [
   role: "UX Research Lead",
   probability: 72,
   thesis: "Human-Computer Interaction in Wearables",
-  thesisExplanation: "Die Arbeit erforscht intuitive Interaktionsmuster für tragbare Geräte und deren Einfluss auf Nutzerzufriedenheit und Gesundheitsmonitoring.",
-  whyThesisFits: "Dein Fokus auf Usability und Design Thinking macht dich ideal für Apples HCI-Team. Die Thesis vermittelt dir Methoden, die Apple bei der Entwicklung von Apple Watch und Vision Pro einsetzt.",
-  careerSteps: ["UX Research Intern bei Apple (6 Monate)", "Junior UX Researcher (1-2 Jahre)", "UX Researcher mit Projektleitung (2-3 Jahre)", "UX Research Lead (ab Jahr 4)"],
+  thesisExplanation: "This thesis explores intuitive interaction patterns for wearable devices and their impact on user satisfaction and health monitoring.",
+  whyThesisFits: "Your focus on usability and design thinking makes you a great fit for Apple's HCI team. The thesis teaches methods Apple uses when developing products like Apple Watch and Vision Pro.",
+  careerSteps: ["UX Research Intern at Apple (6 months)", "Junior UX Researcher (1-2 years)", "UX Researcher with project leadership (2-3 years)", "UX Research Lead (from year 4)"],
   alumni: [
-    { name: "Lisa Chen", role: "Senior UX Designer bei Apple", linkedIn: "#" },
-    { name: "Anna Berger", role: "Product Designer bei Apple", linkedIn: "#" }
+    { name: "Lisa Chen", role: "Senior UX Designer at Apple", linkedIn: "#" },
+    { name: "Anna Berger", role: "Product Designer at Apple", linkedIn: "#" }
   ],
   professors: [
-    { name: "Prof. Dr. Müller", field: "HCI Lab, TU München", link: "#" },
-    { name: "Prof. Dr. Kern", field: "Usability Engineering, TU München", link: "#" }
+    { name: "Prof. Dr. Müller", field: "HCI Lab, TU Munich", link: "#" },
+    { name: "Prof. Dr. Kern", field: "Usability Engineering, TU Munich", link: "#" }
   ],
-  simulationDescription: "Du startest als UX Research Intern in Apples Human Interface Team in Cupertino. Nach 5 Jahren leitest du ein Forschungsteam, das die Interaktionskonzepte für Apples nächste Wearable-Generation entwickelt."
+  simulationDescription: "You begin as a UX Research Intern in Apple's Human Interface team in Cupertino. After 5 years, you lead a research team shaping interaction concepts for Apple's next generation of wearables."
 },
 {
   image: futureAws,
@@ -64,37 +71,37 @@ const scenarios = [
   role: "Cloud Solutions Architect",
   probability: 85,
   thesis: "Scalable Distributed Systems Architecture",
-  thesisExplanation: "Diese Thesis analysiert Architekturmuster für hochskalierbare verteilte Systeme und deren Anwendung in Cloud-Infrastrukturen.",
-  whyThesisFits: "Deine Erfahrung mit Cloud-Technologien und verteilten Systemen passt perfekt zu AWS. Die Thesis bereitet dich direkt auf die technischen Herausforderungen vor, die AWS-Kunden täglich lösen müssen.",
-  careerSteps: ["AWS Solutions Architect Associate (1 Jahr)", "Solutions Architect mit Spezialisierung (1-2 Jahre)", "Senior Solutions Architect (2-3 Jahre)", "Principal Architect (ab Jahr 5)"],
+  thesisExplanation: "This thesis analyzes architecture patterns for highly scalable distributed systems and their use in cloud infrastructure.",
+  whyThesisFits: "Your experience with cloud technologies and distributed systems is a strong fit for AWS. This thesis prepares you for the technical challenges AWS customers solve every day.",
+  careerSteps: ["AWS Solutions Architect Associate (1 year)", "Solutions Architect with specialization (1-2 years)", "Senior Solutions Architect (2-3 years)", "Principal Architect (from year 5)"],
   alumni: [
-    { name: "Tom Baker", role: "Principal Architect bei AWS", linkedIn: "#" },
-    { name: "Markus Stein", role: "Solutions Architect bei AWS München", linkedIn: "#" }
+    { name: "Tom Baker", role: "Principal Architect at AWS", linkedIn: "#" },
+    { name: "Markus Stein", role: "Solutions Architect at AWS Munich", linkedIn: "#" }
   ],
   professors: [
-    { name: "Prof. Dr. Klein", field: "Distributed Systems, TU München", link: "#" },
-    { name: "Prof. Dr. Bauer", field: "Cloud Computing, TU München", link: "#" }
+    { name: "Prof. Dr. Klein", field: "Distributed Systems, TU Munich", link: "#" },
+    { name: "Prof. Dr. Bauer", field: "Cloud Computing, TU Munich", link: "#" }
   ],
-  simulationDescription: "Nach deiner Thesis steigst du als Associate Solutions Architect bei AWS in München ein. Du berätst DAX-Unternehmen bei der Cloud-Migration und wirst innerhalb von 5 Jahren zum Principal Architect befördert."
+  simulationDescription: "After your thesis, you join AWS in Munich as an Associate Solutions Architect. You advise enterprise clients on cloud migration and are promoted to Principal Architect within 5 years."
 },
 {
   image: futureStartup,
-  company: "Eigenes Startup",
+  company: "Own Startup",
   role: "CEO & Co-Founder",
   probability: 45,
   thesis: "Digital Platform Economics in EdTech",
-  thesisExplanation: "Die Arbeit untersucht Geschäftsmodelle und Netzwerkeffekte digitaler Plattformen im Bildungsbereich – die theoretische Grundlage für dein eigenes EdTech-Startup.",
-  whyThesisFits: "Dein unternehmerisches Denken und EdTech-Interesse könnten ein eigenes Startup ermöglichen. Die Thesis liefert dir das strategische Framework und Marktverständnis für eine Gründung.",
-  careerSteps: ["Thesis als Marktvalidierung nutzen", "Teilnahme an TUM Incubator (6 Monate)", "Pre-Seed Finanzierung sichern (Jahr 1)", "Product-Market Fit erreichen (Jahr 2)", "Series A und Skalierung (Jahr 3-5)"],
+  thesisExplanation: "This thesis examines business models and network effects of digital platforms in education, providing a theoretical foundation for your own EdTech startup.",
+  whyThesisFits: "Your entrepreneurial mindset and interest in EdTech can translate into building your own startup. The thesis gives you a strategic framework and market understanding for launching.",
+  careerSteps: ["Use thesis as market validation", "Join the TUM Incubator (6 months)", "Secure pre-seed funding (year 1)", "Reach product-market fit (year 2)", "Series A and scaling (years 3-5)"],
   alumni: [
-    { name: "Sarah Venture", role: "VC Partner bei Earlybird", linkedIn: "#" },
-    { name: "Max Innovation", role: "Founder bei TechHub Munich", linkedIn: "#" }
+    { name: "Sarah Venture", role: "VC Partner at Earlybird", linkedIn: "#" },
+    { name: "Max Innovation", role: "Founder at TechHub Munich", linkedIn: "#" }
   ],
   professors: [
-    { name: "Prof. Dr. Krcmar", field: "Entrepreneurship, TU München", link: "#" },
-    { name: "Prof. Dr. Welpe", field: "Strategy & Innovation, TU München", link: "#" }
+    { name: "Prof. Dr. Krcmar", field: "Entrepreneurship, TU Munich", link: "#" },
+    { name: "Prof. Dr. Welpe", field: "Strategy & Innovation, TU Munich", link: "#" }
   ],
-  simulationDescription: "Du nutzt deine Thesis als Grundlage für ein EdTech-Startup. Über den TUM Incubator findest du einen Co-Founder, sicherst dir eine Pre-Seed-Finanzierung und baust innerhalb von 3 Jahren eine Plattform mit 50.000 Nutzern auf."
+  simulationDescription: "You use your thesis as the foundation for an EdTech startup. Through the TUM Incubator, you find a co-founder, secure pre-seed funding, and build a platform with 50,000 users within 3 years."
 },
 {
   image: futureConsulting,
@@ -102,79 +109,64 @@ const scenarios = [
   role: "Associate Consultant",
   probability: 68,
   thesis: "Digital Transformation in Traditional Industries",
-  thesisExplanation: "Diese Thesis analysiert Erfolgsfaktoren und Hindernisse der digitalen Transformation in etablierten Industrien – genau das Thema, das Beratungsfirmen bei ihren Kunden lösen.",
-  whyThesisFits: "Deine analytischen Fähigkeiten und Branchenkenntnisse sind perfekt für Strategieberatung. Die Thesis gibt dir ein tiefes Verständnis der Herausforderungen, mit denen McKinseys Kunden konfrontiert sind.",
-  careerSteps: ["McKinsey Business Analyst (1 Jahr)", "Associate Consultant (1-2 Jahre)", "Engagement Manager (Jahr 3-4)", "Associate Partner (ab Jahr 5)"],
+  thesisExplanation: "This thesis analyzes success factors and barriers in digital transformation across established industries, the exact challenge consulting firms tackle with clients.",
+  whyThesisFits: "Your analytical skills and industry perspective are a strong fit for strategy consulting. This thesis gives you a deep understanding of the challenges McKinsey clients face.",
+  careerSteps: ["McKinsey Business Analyst (1 year)", "Associate Consultant (1-2 years)", "Engagement Manager (years 3-4)", "Associate Partner (from year 5)"],
   alumni: [
-    { name: "Dr. Fischer", role: "Partner bei McKinsey Digital", linkedIn: "#" },
-    { name: "Julia Krause", role: "Engagement Manager bei McKinsey", linkedIn: "#" }
+    { name: "Dr. Fischer", role: "Partner at McKinsey Digital", linkedIn: "#" },
+    { name: "Julia Krause", role: "Engagement Manager at McKinsey", linkedIn: "#" }
   ],
   professors: [
-    { name: "Prof. Dr. Braun", field: "Strategic Management, TU München", link: "#" },
-    { name: "Prof. Dr. Lanzinner", field: "Digital Business, TU München", link: "#" }
+    { name: "Prof. Dr. Braun", field: "Strategic Management, TU Munich", link: "#" },
+    { name: "Prof. Dr. Lanzinner", field: "Digital Business, TU Munich", link: "#" }
   ],
-  simulationDescription: "Du startest als Business Analyst bei McKinsey in München und arbeitest an Digitalisierungsprojekten für Automobilhersteller. Nach 5 Jahren bist du Engagement Manager und leitest eigene Projekte mit Millionenbudgets."
+  simulationDescription: "You start as a Business Analyst at McKinsey in Munich and work on digital transformation projects for automotive clients. After 5 years, you are an Engagement Manager leading multi-million budget projects."
 }];
 
 
 const thesinatorQuestions = [
   {
     id: 1,
-    question: "Welcher Bereich fasziniert dich am meisten?",
-    options: ["Technologie & IT", "Wirtschaft & Management", "Design & Kreativität", "Forschung & Wissenschaft", "Soziales & Gesellschaft"]
+    question: "Which area fascinates you the most?",
+    options: ["Technology & IT", "Business & Management", "Design & Creativity", "Research & Science", "Social Impact & Society"]
   },
   {
     id: 2,
-    question: "Wie wichtig ist dir Praxisbezug in deiner Thesis?",
-    options: ["Sehr wichtig", "Wichtig", "Neutral", "Weniger wichtig", "Gar nicht wichtig"]
+    question: "How important is practical relevance in your thesis?",
+    options: ["Very important", "Important", "Neutral", "Less important", "Not important"]
   },
   {
     id: 3,
-    question: "Möchtest du mit einem Unternehmen zusammenarbeiten?",
-    options: ["Ja, unbedingt", "Eher ja", "Weiß nicht", "Eher nein", "Nein"]
+    question: "Do you want to collaborate with a company?",
+    options: ["Yes, definitely", "Probably yes", "Not sure", "Probably not", "No"]
   },
   {
     id: 4,
-    question: "Welche Methodik bevorzugst du?",
-    options: ["Quantitativ (Daten & Statistik)", "Qualitativ (Interviews & Analyse)", "Mixed Methods", "Design-basiert (Prototyping)", "Egal"]
+    question: "Which methodology do you prefer?",
+    options: ["Quantitative (Data & Statistics)", "Qualitative (Interviews & Analysis)", "Mixed Methods", "Design-Based (Prototyping)", "No Preference"]
   },
   {
     id: 5,
-    question: "Wo siehst du dich nach dem Studium?",
-    options: ["Großkonzern (Google, Apple...)", "Startup gründen", "Beratung (McKinsey...)", "Forschung & Akademie", "Noch unsicher"]
+    question: "Where do you see yourself after graduation?",
+    options: ["Large Company (Google, Apple...)", "Founding a Startup", "Consulting (McKinsey...)", "Research & Academia", "Still Unsure"]
   },
   {
     id: 6,
-    question: "Wie lang soll deine Thesis ungefähr dauern?",
-    options: ["3 Monate", "4-5 Monate", "6 Monate", "Länger als 6 Monate", "Flexibel"]
+    question: "How long should your thesis approximately take?",
+    options: ["3 months", "4-5 months", "6 months", "Longer than 6 months", "Flexible"]
   },
   {
     id: 7,
-    question: "Welches Thema reizt dich besonders?",
-    options: ["Künstliche Intelligenz", "Nachhaltigkeit & Green Tech", "Digitale Transformation", "Plattformökonomie", "Cybersecurity"]
+    question: "Which topic excites you the most?",
+    options: ["Artificial Intelligence", "Sustainability & Green Tech", "Digital Transformation", "Platform Economics", "Cybersecurity"]
   }
 ];
 
 const ThesisFinder = () => {
   const [currentStep, setCurrentStep] = useState(1);
-  const [questionIndex, setQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [isTyping, setIsTyping] = useState(false);
-  const [textInput, setTextInput] = useState("");
 
   const handleNextStep = () => {
     if (currentStep < 5) setCurrentStep(currentStep + 1);
-  };
-
-  const handleAnswer = (answer: string) => {
-    setAnswers((prev) => ({ ...prev, [questionIndex]: answer }));
-    setIsTyping(true);
-    setTimeout(() => {
-      setIsTyping(false);
-      if (questionIndex < thesinatorQuestions.length - 1) {
-        setQuestionIndex((prev) => prev + 1);
-      }
-    }, 1200);
   };
 
   return (
@@ -182,7 +174,7 @@ const ThesisFinder = () => {
       <header className="border-b border-border">
         <div className="mx-auto w-full max-w-[1400px] px-4 py-4 sm:px-6 lg:px-8">
           <h1 className="ds-title-lg">Thesinator</h1>
-          <p className="ds-small text-muted-foreground mt-1">Finde deine perfekte Abschlussarbeit in 5 Schritten</p>
+          <p className="ds-small text-muted-foreground mt-1">Find your ideal thesis in 5 steps</p>
         </div>
       </header>
 
@@ -226,17 +218,7 @@ const ThesisFinder = () => {
       {/* Step content */}
       <main className="mx-auto w-full max-w-[1400px] px-4 py-8 sm:px-6 lg:px-8 animate-fade-in" key={currentStep}>
         {currentStep === 1 && <StepBasicInfo onNext={handleNextStep} />}
-        {currentStep === 2 &&
-        <StepGenieChat
-          questionIndex={questionIndex}
-          answers={answers}
-          onAnswer={handleAnswer}
-          onNext={handleNextStep}
-          isTyping={isTyping}
-          textInput={textInput}
-          setTextInput={setTextInput}
-          allAnswered={questionIndex >= thesinatorQuestions.length - 1 && Object.keys(answers).length >= thesinatorQuestions.length} />
-        }
+        {currentStep === 2 && <StepGenieChat onNext={handleNextStep} />}
         {currentStep === 3 && <StepMatching onNext={handleNextStep} />}
         {currentStep === 4 && <StepSimulation onNext={handleNextStep} />}
         {currentStep === 5 && <StepResults />}
@@ -248,15 +230,15 @@ const ThesisFinder = () => {
 /* Step 1 */
 const StepBasicInfo = ({ onNext }: {onNext: () => void;}) =>
 <div className="mx-auto max-w-2xl">
-    <h2 className="ds-title-md mb-6">Deine Grundinformationen</h2>
+    <h2 className="ds-title-md mb-6">Your Basic Information</h2>
     <div className="bg-card border border-border rounded-lg p-6 max-w-lg mx-auto">
       <div className="space-y-4">
         {[
       { label: "Name", value: "Sebastian Hahn" },
-      { label: "Universität", value: "Technische Universität München" },
-      { label: "Studiengang", value: "Wirtschaftsinformatik (M.Sc.)" },
-      { label: "Semester", value: "3. Semester" },
-      { label: "E-Mail", value: "sebastian.hahn@student.tum.de" }].
+      { label: "University", value: "Technical University of Munich" },
+      { label: "Program", value: "Information Systems (M.Sc.)" },
+      { label: "Semester", value: "3rd semester" },
+      { label: "Email", value: "sebastian.hahn@student.tum.de" }].
       map((field) =>
       <div key={field.label}>
             <label className="ds-label text-muted-foreground">{field.label}</label>
@@ -266,11 +248,11 @@ const StepBasicInfo = ({ onNext }: {onNext: () => void;}) =>
       </div>
       <div className="mt-6 flex items-center gap-3">
         <Check size={16} className="text-primary" />
-        <span className="ds-small text-muted-foreground">Automatisch aus deiner Registrierung übernommen</span>
+        <span className="ds-small text-muted-foreground">Automatically imported from your registration</span>
       </div>
     </div>
     <Button onClick={onNext} className="mt-6 rounded-full gap-2">
-      Weiter zum Thesinator <ArrowRight size={16} />
+      Continue to Thesinator <ArrowRight size={16} />
     </Button>
   </div>;
 
@@ -321,44 +303,71 @@ const ThesinatorAvatar = ({ isTyping, isSpeaking }: {isTyping: boolean;isSpeakin
 
 /* Speech Bubble */
 const SpeechBubble = ({ text }: {text: string;}) =>
-<div className="relative max-w-[320px] mb-4">
-    
-
-
-
-
-
-
-
-
-  
+<div className="relative mb-4 max-w-2xl">
+    <img
+    src={speechBubbleBg}
+    alt="Speech bubble"
+    className="absolute inset-0 h-full w-full object-cover opacity-20 pointer-events-none" />
+  <div className="relative rounded-xl border border-border bg-card/90 px-5 py-4 shadow-sm">
+    <p className="ds-body whitespace-pre-line text-foreground">{text}</p>
+  </div>
   </div>;
 
 
 /* Voice Input Hook */
+type SpeechRecognitionResultItem = {
+  transcript: string;
+};
+
+type SpeechRecognitionEventShape = {
+  results: ArrayLike<ArrayLike<SpeechRecognitionResultItem>>;
+};
+
+type BrowserSpeechRecognition = {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechRecognitionEventShape) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+};
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
 const useVoiceInput = (onResult: (text: string) => void) => {
   const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+
+  const stopListening = () => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+  };
 
   const toggleListening = () => {
     if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
+      stopListening();
       return;
     }
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const speechWindow = window as Window & {
+      SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+      webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    };
+
+    const SpeechRecognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Spracherkennung wird von deinem Browser nicht unterstützt.");
+      alert("Speech recognition is not supported in this browser.");
       return;
     }
 
     const recognition = new SpeechRecognition();
-    recognition.lang = "de-DE";
+    recognition.lang = "en-US";
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEventShape) => {
       const transcript = event.results[0][0].transcript;
       onResult(transcript);
       setIsListening(false);
@@ -372,107 +381,224 @@ const useVoiceInput = (onResult: (text: string) => void) => {
     setIsListening(true);
   };
 
-  return { isListening, toggleListening };
+  return { isListening, toggleListening, stopListening };
 };
 
 /* Step 2 */
-const StepGenieChat = ({
-  questionIndex,
-  answers,
-  onAnswer,
-  onNext,
-  isTyping,
-  textInput,
-  setTextInput,
-  allAnswered
-}: {
-  questionIndex: number;
-  answers: Record<number, string>;
-  onAnswer: (answer: string) => void;
-  onNext: () => void;
-  isTyping: boolean;
-  textInput: string;
-  setTextInput: (v: string) => void;
-  allAnswered: boolean;
-}) => {
+const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [clientToken, setClientToken] = useState<string | null>(null);
+  const [currentQuestion, setCurrentQuestion] = useState<BackendQuestion | null>(null);
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [assistantMessage, setAssistantMessage] = useState("");
+  const [contextSnapshot, setContextSnapshot] = useState<ContextSnapshot | null>(null);
+  const [textInput, setTextInput] = useState("");
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isComplete, setIsComplete] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const currentQuestion = thesinatorQuestions[questionIndex];
+  const [error, setError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const { isListening, toggleListening } = useVoiceInput((transcript) => {
-    onAnswer(transcript);
+  const playAudio = useCallback((audioBase64: string | null) => {
+    if (!audioBase64) {
+      setIsSpeaking(false);
+      return;
+    }
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`);
+    audioRef.current = audio;
+    setIsSpeaking(true);
+
+    audio.onended = () => setIsSpeaking(false);
+    audio.onerror = () => setIsSpeaking(false);
+    void audio.play().catch(() => setIsSpeaking(false));
+  }, []);
+
+  const bootstrapSession = useCallback(async () => {
+    setIsLoadingSession(true);
+    setError(null);
+    setIsComplete(false);
+    setAnswers({});
+    setQuestionIndex(0);
+    setSessionId(null);
+    setClientToken(null);
+    setCurrentQuestion(null);
+    setContextSnapshot(null);
+    setTextInput("");
+
+    try {
+      const start = await startThesinatorSession();
+      setSessionId(start.session_id);
+      setClientToken(start.client_token);
+      setCurrentQuestion(start.question);
+      setQuestionIndex(start.question_index);
+      setAssistantMessage(start.assistant_reply);
+      playAudio(start.audio_b64);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start Thesinator.");
+    } finally {
+      setIsLoadingSession(false);
+    }
+  }, [playAudio]);
+
+  useEffect(() => {
+    void bootstrapSession();
+  }, [bootstrapSession]);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  const submitAnswer = useCallback(async (answer: string, inputMode: InputMode) => {
+    if (!sessionId || !currentQuestion || isSubmitting || isComplete) {
+      return;
+    }
+
+    const trimmed = answer.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: trimmed }));
+    setError(null);
+    setTextInput("");
+    setIsSubmitting(true);
+
+    try {
+      const result = await sendThesinatorTurn({
+        sessionId,
+        questionId: currentQuestion.id,
+        userAnswer: trimmed,
+        inputMode,
+        clientToken,
+      });
+
+      setAssistantMessage(result.assistant_reply);
+      setClientToken((prev) => result.client_token ?? prev);
+      setQuestionIndex(result.question_index);
+      playAudio(result.audio_b64);
+
+      if (result.is_complete) {
+        setIsComplete(true);
+        setCurrentQuestion(null);
+        setContextSnapshot(result.context_snapshot ?? null);
+      } else {
+        setCurrentQuestion(result.next_question ?? thesinatorQuestions[result.question_index] ?? null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send answer.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [clientToken, currentQuestion, isComplete, isSubmitting, playAudio, sessionId]);
+
+  const { isListening, toggleListening, stopListening } = useVoiceInput((transcript) => {
+    void submitAnswer(transcript, "speech");
   });
 
   useEffect(() => {
-    setIsSpeaking(true);
-    const timer = setTimeout(() => setIsSpeaking(false), 2500);
-    return () => clearTimeout(timer);
-  }, [questionIndex]);
+    if (isSubmitting || isComplete) {
+      stopListening();
+    }
+  }, [isComplete, isSubmitting, stopListening]);
+
+  const totalQuestions = thesinatorQuestions.length;
+  const answeredCount = Object.keys(answers).length;
+  const progress = Math.min((answeredCount / totalQuestions) * 100, 100);
+  const displayStep = isComplete ? totalQuestions : questionIndex + 1;
 
   const handleTextSubmit = () => {
-    if (!textInput.trim()) return;
-    onAnswer(textInput);
-    setTextInput("");
+    void submitAnswer(textInput, "text");
   };
 
   return (
     <div className="flex flex-col gap-8 xl:flex-row xl:items-start">
       {/* Thesinator avatar */}
       <div className="flex flex-col items-center gap-4 flex-shrink-0 w-full xl:w-auto">
-        <ThesinatorAvatar isTyping={isTyping} isSpeaking={isSpeaking && !isTyping} />
+        <ThesinatorAvatar isTyping={isLoadingSession || isSubmitting} isSpeaking={isSpeaking && !(isLoadingSession || isSubmitting)} />
       </div>
 
       {/* Question panel */}
       <div className="w-full flex-1 xl:max-w-xl">
-        {/* Question header with number */}
-        <div className="flex items-center gap-4 mb-6">
-          <div className="bg-primary text-primary-foreground w-14 h-14 rounded-lg flex items-center justify-center ds-title-md font-bold relative">
-            <Sparkles size={12} className="absolute top-1.5 left-1/2 -translate-x-1/2 text-primary-foreground/60" />
-            {currentQuestion.id}
-            <Sparkles size={10} className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-primary-foreground/60" />
-          </div>
-          <div className="flex-1 bg-card border border-border rounded-lg px-5 py-4">
-            <p className="ds-title-cards text-foreground">{currentQuestion.question}</p>
-          </div>
-        </div>
+        {assistantMessage && <SpeechBubble text={assistantMessage} />}
 
-        {/* Progress */}
-        <div className="mb-4 flex items-center gap-3">
-          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-            <div
-              className="h-full bg-primary transition-all duration-500 rounded-full"
-              style={{ width: `${((questionIndex + (answers[questionIndex] ? 1 : 0)) / thesinatorQuestions.length) * 100}%` }}
-            />
-          </div>
-          <span className="ds-caption text-muted-foreground">{questionIndex + 1}/{thesinatorQuestions.length}</span>
-        </div>
-
-        {/* Answer options */}
-        {!isTyping && (
-          <div className="space-y-3 mb-6 animate-fade-in">
-            {currentQuestion.options.map((option, i) => (
-              <button
-                key={i}
-                onClick={() => onAnswer(option)}
-                className={`w-full py-4 px-6 rounded-lg border text-center ds-body font-semibold transition-all duration-200 ${
-                  answers[questionIndex] === option
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-card border-border text-foreground hover:border-primary/50 hover:shadow-md"
-                }`}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {isTyping && (
-          <div className="flex justify-center py-12 animate-fade-in">
+        {isLoadingSession && (
+          <div className="flex justify-center py-10">
             <span className="inline-flex gap-1.5">
               <span className="w-3 h-3 bg-primary rounded-full animate-bounce" />
               <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
               <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
             </span>
           </div>
+        )}
+
+        {!isLoadingSession && currentQuestion && (
+          <>
+            {/* Question header with number */}
+            <div className="flex items-center gap-4 mb-6">
+              <div className="bg-primary text-primary-foreground w-14 h-14 rounded-lg flex items-center justify-center ds-title-md font-bold relative">
+                <Sparkles size={12} className="absolute top-1.5 left-1/2 -translate-x-1/2 text-primary-foreground/60" />
+                {currentQuestion.id}
+                <Sparkles size={10} className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-primary-foreground/60" />
+              </div>
+              <div className="flex-1 bg-card border border-border rounded-lg px-5 py-4">
+                <p className="ds-title-cards text-foreground">{currentQuestion.question}</p>
+              </div>
+            </div>
+
+            {/* Progress */}
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-500 rounded-full"
+                  style={{ width: `${progress}%` }} />
+              </div>
+              <span className="ds-caption text-muted-foreground">{displayStep}/{totalQuestions}</span>
+            </div>
+
+            {/* Answer options */}
+            {!isSubmitting &&
+            <div className="space-y-3 mb-6 animate-fade-in">
+                {currentQuestion.options.map((option, i) =>
+              <button
+                key={i}
+                onClick={() => {
+                  void submitAnswer(option, "mcq");
+                }}
+                disabled={isSubmitting}
+                className={`w-full py-4 px-6 rounded-lg border text-center ds-body font-semibold transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed ${
+                answers[currentQuestion.id] === option ?
+                "bg-primary text-primary-foreground border-primary" :
+                "bg-card border-border text-foreground hover:border-primary/50 hover:shadow-md"}`
+                }>
+                    {option}
+                  </button>
+              )}
+              </div>
+            }
+
+            {isSubmitting &&
+            <div className="flex justify-center py-12 animate-fade-in">
+                <span className="inline-flex gap-1.5">
+                  <span className="w-3 h-3 bg-primary rounded-full animate-bounce" />
+                  <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
+                  <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
+                </span>
+              </div>
+            }
+          </>
         )}
 
         {/* Text/Voice input */}
@@ -482,38 +608,59 @@ const StepGenieChat = ({
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleTextSubmit()}
-            placeholder="Oder antworte frei per Text..."
-            className="flex-1 bg-transparent ds-body outline-none placeholder:text-muted-foreground px-3 py-2 rounded-full border border-input focus:ring-2 focus:ring-ring/20"
-          />
+            placeholder="Or answer freely via text..."
+            disabled={isLoadingSession || isSubmitting || isComplete || !currentQuestion}
+            className="flex-1 bg-transparent ds-body outline-none placeholder:text-muted-foreground px-3 py-2 rounded-full border border-input focus:ring-2 focus:ring-ring/20 disabled:opacity-60" />
           <Button
             onClick={toggleListening}
             size="icon"
             variant={isListening ? "destructive" : "outline"}
             className="rounded-full shrink-0"
-            title={isListening ? "Aufnahme stoppen" : "Spracheingabe"}
-          >
+            disabled={isLoadingSession || isSubmitting || isComplete || !currentQuestion}
+            title={isListening ? "Stop recording" : "Speech input"}>
             {isListening ? <MicOff size={16} /> : <Mic size={16} />}
           </Button>
-          <Button onClick={handleTextSubmit} size="icon" className="rounded-full shrink-0">
+          <Button
+            onClick={handleTextSubmit}
+            size="icon"
+            className="rounded-full shrink-0"
+            disabled={isLoadingSession || isSubmitting || isComplete || !currentQuestion}>
             <Send size={16} />
           </Button>
         </div>
 
-        {isListening && (
-          <div className="mt-2 flex items-center gap-2 text-destructive ds-small animate-fade-in">
+        {isListening &&
+        <div className="mt-2 flex items-center gap-2 text-destructive ds-small animate-fade-in">
             <span className="w-2 h-2 bg-destructive rounded-full animate-pulse" />
-            Aufnahme läuft... Sprich jetzt!
+            Recording... speak now!
           </div>
-        )}
+        }
 
-        {allAnswered && (
-          <Button onClick={onNext} className="mt-4 rounded-full gap-2 animate-fade-in">
-            Auswertung starten <ArrowRight size={16} />
-          </Button>
-        )}
+        {error &&
+        <div className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+            <p className="ds-small text-destructive">{error}</p>
+            <Button onClick={() => void bootstrapSession()} variant="outline" className="mt-3 rounded-full">
+              Restart Thesinator
+            </Button>
+          </div>
+        }
+
+        {isComplete && contextSnapshot &&
+        <div className="mt-6 space-y-4 animate-fade-in">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <p className="ds-label text-foreground mb-2">5. context_snapshot shape</p>
+              <p className="ds-small text-muted-foreground mb-3">Built up during the conversation, one stage at a time:</p>
+              <pre className="overflow-auto rounded-md bg-muted/40 p-3 ds-small leading-relaxed">
+                {JSON.stringify(contextSnapshot, null, 2)}
+              </pre>
+            </div>
+            <Button onClick={onNext} className="rounded-full gap-2">
+              Start evaluation <ArrowRight size={16} />
+            </Button>
+          </div>
+        }
       </div>
-    </div>
-  );
+    </div>);
 };
 
 /* Step 3 */
@@ -533,7 +680,7 @@ const StepMatching = ({ onNext }: {onNext: () => void;}) => {
     <div className="text-center max-w-md mx-auto">
       <h2 className="ds-title-md mb-4">Thesis Matching</h2>
       <p className="ds-body text-muted-foreground mb-8">
-        Basierend auf deinem Gespräch mit dem Thesinator finden wir die besten Thesis-Themen für dich.
+        Based on your conversation with Thesinator, we find the best thesis topics for you.
       </p>
 
       {!matched ?
@@ -541,12 +688,12 @@ const StepMatching = ({ onNext }: {onNext: () => void;}) => {
           {matching ?
         <>
               <span className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-              Matching läuft...
+              Matching in progress...
             </> :
 
         <>
               <Sparkles size={18} />
-              Thesis Matchen
+              Run thesis matching
             </>
         }
         </Button> :
@@ -555,9 +702,9 @@ const StepMatching = ({ onNext }: {onNext: () => void;}) => {
           <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center mx-auto mb-4">
             <Check size={28} className="text-primary-foreground" />
           </div>
-          <p className="ds-body text-foreground mb-6">12 passende Themen gefunden!</p>
+          <p className="ds-body text-foreground mb-6">12 matching topics found!</p>
           <Button onClick={onNext} className="rounded-full gap-2">
-            Weiter zur Simulation <ArrowRight size={16} />
+            Continue to simulation <ArrowRight size={16} />
           </Button>
         </div>
       }
@@ -580,9 +727,9 @@ const StepSimulation = ({ onNext }: {onNext: () => void;}) => {
 
   return (
     <div className="text-center max-w-md mx-auto">
-      <h2 className="ds-title-md mb-4">Karriere-Simulation</h2>
+      <h2 className="ds-title-md mb-4">Career Simulation</h2>
       <p className="ds-body text-muted-foreground mb-8">
-        Wir simulieren 5 verschiedene Karrierewege basierend auf deinen Thesis-Matches.
+        We simulate 5 different career paths based on your thesis matches.
       </p>
 
       {!done ?
@@ -590,12 +737,12 @@ const StepSimulation = ({ onNext }: {onNext: () => void;}) => {
           {simulating ?
         <>
               <span className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-              Simulation läuft...
+              Simulation in progress...
             </> :
 
         <>
               <Briefcase size={18} />
-              Simulation starten
+              Start simulation
             </>
         }
         </Button> :
@@ -604,9 +751,9 @@ const StepSimulation = ({ onNext }: {onNext: () => void;}) => {
           <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center mx-auto mb-4">
             <Check size={28} className="text-primary-foreground" />
           </div>
-          <p className="ds-body text-foreground mb-6">5 Szenarien generiert!</p>
+          <p className="ds-body text-foreground mb-6">5 scenarios generated!</p>
           <Button onClick={onNext} className="rounded-full gap-2">
-            Ergebnisse ansehen <ArrowRight size={16} />
+            View results <ArrowRight size={16} />
           </Button>
         </div>
       }
@@ -623,9 +770,9 @@ const StepResults = () => {
 
   return (
     <div>
-      <h2 className="ds-title-md mb-2">Deine Zukunfts-Szenarien</h2>
+      <h2 className="ds-title-md mb-2">Your Future Scenarios</h2>
       <p className="ds-body text-muted-foreground mb-8">
-        Klicke auf ein Szenario für Details und chatte mit deinem zukünftigen Ich.
+        Click a scenario to view details and chat with your future self.
       </p>
 
       {/* Scenario cards grid */}
@@ -665,7 +812,7 @@ const StepResults = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="ds-title-cards text-foreground">
-                    Dein Zukunfts-Ich bei {s.company}
+                    Your Future Self at {s.company}
                   </h3>
                   <p className="ds-label text-muted-foreground mt-1">{s.role}</p>
                 </div>
@@ -682,7 +829,7 @@ const StepResults = () => {
             {/* Thesis */}
             <div>
               <p className="ds-label text-foreground flex items-center gap-2 mb-2">
-                <GraduationCap size={16} className="text-primary" /> Thesis-Thema
+                <GraduationCap size={16} className="text-primary" /> Thesis Topic
               </p>
               <p className="ds-body text-foreground font-semibold">{s.thesis}</p>
               <p className="ds-small text-muted-foreground mt-1">{s.thesisExplanation}</p>
@@ -691,7 +838,7 @@ const StepResults = () => {
             {/* Why it fits */}
             <div>
               <p className="ds-label text-foreground flex items-center gap-2 mb-2">
-                <Sparkles size={16} className="text-primary" /> Warum diese Thesis zu dir passt
+                <Sparkles size={16} className="text-primary" /> Why This Thesis Fits You
               </p>
               <p className="ds-small text-muted-foreground">{s.whyThesisFits}</p>
             </div>
@@ -699,7 +846,7 @@ const StepResults = () => {
             {/* Career steps */}
             <div>
               <p className="ds-label text-foreground flex items-center gap-2 mb-3">
-                <Footprints size={16} className="text-primary" /> Notwendige Karriereschritte
+                <Footprints size={16} className="text-primary" /> Required Career Steps
               </p>
               <div className="space-y-2">
                 {s.careerSteps.map((step, j) => (
@@ -718,7 +865,7 @@ const StepResults = () => {
               {/* Best professors */}
               <div>
                 <p className="ds-label text-foreground flex items-center gap-2 mb-3">
-                  <BookOpen size={16} className="text-primary" /> Beste Profs für deine Thesis
+                  <BookOpen size={16} className="text-primary" /> Best Professors for Your Thesis
                 </p>
                 <div className="space-y-2">
                   {s.professors.map((prof, j) => (
@@ -739,7 +886,7 @@ const StepResults = () => {
               {/* Alumni */}
               <div>
                 <p className="ds-label text-foreground flex items-center gap-2 mb-3">
-                  <Users size={16} className="text-primary" /> Verlinkte Alumni deiner Uni
+                  <Users size={16} className="text-primary" /> Linked Alumni from Your University
                 </p>
                 <div className="space-y-2">
                   {s.alumni.map((alum, j) => (
@@ -767,7 +914,7 @@ const StepResults = () => {
                 variant={chatStarted[selectedScenario!] ? "outline" : "default"}
               >
                 <MessageCircle size={18} />
-                {chatStarted[selectedScenario!] ? "Chat mit deinem Future-You fortsetzen" : "Chat mit deinem Future-You starten"}
+                {chatStarted[selectedScenario!] ? "Continue chat with your future self" : "Start chat with your future self"}
               </Button>
               {chatStarted[selectedScenario!] && (
                 <div className="mt-4 bg-muted/30 rounded-lg p-4 animate-fade-in">
@@ -775,14 +922,14 @@ const StepResults = () => {
                     <img src={s.image} alt={s.company} className="w-10 h-10 rounded-full object-cover" />
                     <div className="bg-card border border-border rounded-lg px-4 py-3 flex-1">
                       <p className="ds-small text-foreground">
-                        Hey! Ich bin dein Zukunfts-Ich bei {s.company}. Frag mich alles über meinen Weg hierher – von der Thesis bis zum Job. Was möchtest du wissen?
+                        Hey! I am your future self at {s.company}. Ask me anything about my path here, from thesis to job. What would you like to know?
                       </p>
                     </div>
                   </div>
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Frag dein Future-You..."
+                      placeholder="Ask your future self..."
                       className="flex-1 bg-card ds-small outline-none placeholder:text-muted-foreground px-4 py-2.5 rounded-full border border-input focus:ring-2 focus:ring-ring/20"
                     />
                     <Button size="icon" className="rounded-full shrink-0">

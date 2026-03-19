@@ -1,2 +1,4 @@
 .env
+/supabase/.env
+/thesis-navigator-main/.env
 venv
