@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+
+    --primary: 0 0% 17%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 17%;
+
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 50%;
+
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 17%;
+
+    --destructive: 355 72% 57%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 93%;
+    --input: 0 0% 93%;
+    --ring: 0 0% 17%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 0% 17%;
+    --sidebar-primary: 0 0% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 96%;
+    --sidebar-accent-foreground: 0 0% 10%;
+    --sidebar-border: 0 0% 93%;
+    --sidebar-ring: 0 0% 17%;
+
+    /* AI accent */
+    --ai-from: 258 60% 55%;
+    --ai-to: 220 70% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100%;
+  }
+  html {
+    font-size: 112.5%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    min-height: 100dvh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  #root {
+    min-height: 100dvh;
+  }
+}
+
+/* Type scale */
+.ds-caption { font-size: 12px; font-weight: 400; line-height: 16px; }
+.ds-badge { font-size: 12px; font-weight: 500; line-height: 16px; }
+.ds-label { font-size: 14px; font-weight: 500; line-height: 20px; }
+.ds-small { font-size: 14px; font-weight: 400; line-height: 20px; }
+.ds-body { font-size: 16px; font-weight: 400; line-height: 24px; }
+.ds-title-cards { font-size: 18px; font-weight: 500; line-height: 24px; }
+.ds-title-sm { font-size: 20px; font-weight: 500; line-height: 28px; }
+.ds-title-md { font-size: 24px; font-weight: 500; line-height: 32px; }
+.ds-title-lg { font-size: 30px; font-weight: 500; line-height: 36px; }
+.ds-title-xl { font-size: 36px; font-weight: 500; line-height: 40px; }
+
+/* Genie float animation */
+@keyframes genie-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+.animate-genie-float {
+  animation: genie-float 3s ease-in-out infinite;
+}
+
+/* Sparkle animation */
+@keyframes sparkle {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.animate-sparkle {
+  animation: sparkle 2s ease-in-out infinite;
+}
+
+/* Speech bubble pop */
+@keyframes bubble-pop {
+  0% { opacity: 0; transform: scale(0.8) translateY(10px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-bubble-pop {
+  animation: bubble-pop 0.4s ease-out forwards;
+}
+
+/* AI gradient text */
+.text-ai {
+  background: linear-gradient(135deg, hsl(var(--ai-from)), hsl(var(--ai-to)));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Progress step connector */
+.step-connector {
+  position: relative;
+}
+.step-connector::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  width: 100%;
+  height: 2px;
+  background: hsl(var(--border));
+}
+.step-connector.completed::after {
+  background: hsl(var(--primary));
+}
