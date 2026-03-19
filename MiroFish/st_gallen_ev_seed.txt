@@ -1,0 +1,7 @@
+Studyond/OST Thesis Marketplace Blueprint
+
+Studyond is a Swiss startup that connects students, universities, and companies for academic projects. It operates a three-sided marketplace where students find thesis topics from real companies, companies access talent and research capacity, and universities embed structured industry linkage into their curricula. OST - Eastern Switzerland University of Applied Sciences is a practice-oriented university with its campus in St. Gallen.
+
+Currently, students face a fragmented experience searching university websites for supervisors, browsing company career pages for industry topics, and cold-messaging professionals. Finding the right combination of topic, company, and academic supervisor often takes weeks of logistical nightmares. 
+
+Studyond already has thousands of thesis topics from hundreds of companies, supervisors, industry experts, and 20+ universities connected through an AI matching engine. The missing piece is an intelligent experience layer (a "Thesis Copilot") that guides students from "I'm starting my thesis" to "I'm handing it in", proactively matching them with the right topics, supervisors, and external experts.

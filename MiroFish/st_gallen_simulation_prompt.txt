@@ -1,0 +1,5 @@
+Simulate a hyper-realistic social network of students, academic supervisors, and industry partners using the Studyond/OST Thesis Marketplace.
+
+Generate one distinct personas representing the St. Gallen university ecosystem, including:
+- A stressed OST computer science student struggling to find a thesis topic in applied AI.
+The simulation should forecast how the introduction of the new AI-powered "Thesis Copilot" changes the ecosystem over 5 simulated days. Will the Copilot successfully reduce the logistical bottleneck for students, or will supervisors feel overwhelmed by automated matching suggestions?
