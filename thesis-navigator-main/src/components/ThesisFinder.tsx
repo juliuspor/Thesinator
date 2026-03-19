@@ -51,8 +51,8 @@ import {
 } from "@/services/futureSessions";
 import { LiveFuturePathGraph } from "@/components/LiveFuturePathGraph";
 import {
-  completeThesinatorSession,
   fetchThesinatorTopTopics,
+  sendThesinatorTurn,
   startThesinatorSession,
   type ContextSnapshot,
   type InputMode,
@@ -125,8 +125,6 @@ type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 const FUTURE_SESSION_STORAGE_KEY = "starthack-active-future-session";
 const ACTIVE_FUTURE_STORAGE_KEY = "starthack-active-future-selection";
 const THESINATOR_QUESTION_COUNT = 3;
-
-const buildPendingAssistantReply = (question: BackendQuestion) => question.question;
 
 const inputModeLabels: Record<InputMode, string> = {
   mcq: "MCQ",
@@ -1821,56 +1819,57 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
           inputMode,
         },
       };
-
-      const nextQuestion = questions[currentQuestionIndex + 1] ?? null;
-      if (nextQuestion) {
-        nextTurns.push({
-          question: nextQuestion,
-          assistantMessage: buildPendingAssistantReply(nextQuestion),
-          userAnswer: null,
-        });
-        setTurns(nextTurns);
-        setCurrentQuestionIndex(currentQuestionIndex + 1);
-        return;
-      }
-
       setTurns(nextTurns);
       setIsSubmitting(true);
 
       try {
-        const result = await completeThesinatorSession({
+        const result = await sendThesinatorTurn({
           sessionId,
+          questionId: activeQuestion.id,
           clientToken,
-          answers: nextTurns.map((turn) => ({
-            questionId: turn.question.id,
-            userAnswer: turn.userAnswer?.text ?? "",
-            inputMode: turn.userAnswer?.inputMode ?? "text",
-          })),
+          userAnswer: trimmed,
+          inputMode,
         });
 
         setClientToken((prev) => result.client_token ?? prev);
         setCurrentQuestionIndex(result.question_index);
         playAudio(result.audio_b64);
 
-        const completionTopics =
-          result.top_topics && result.top_topics.length > 0
-            ? result.top_topics
-            : (await fetchThesinatorTopTopics({
-                sessionId: result.session_id,
-                clientToken: result.client_token ?? clientToken,
-                limit: 5,
-              })).top_topics;
+        if (result.is_complete) {
+          const completionTopics =
+            result.top_topics && result.top_topics.length > 0
+              ? result.top_topics
+              : (await fetchThesinatorTopTopics({
+                  sessionId: result.session_id,
+                  clientToken: result.client_token ?? clientToken,
+                  limit: 5,
+                })).top_topics;
 
-        setIsComplete(true);
-        setFinalAssistantMessage(result.assistant_reply);
-        setContextSnapshot(result.context_snapshot ?? null);
-        onComplete({
-          sessionId: result.session_id,
-          clientToken: result.client_token ?? clientToken,
-          contextSnapshot: result.context_snapshot ?? null,
-          topTopics: completionTopics,
-          matchingMeta: result.matching_meta ?? null,
-        });
+          setIsComplete(true);
+          setFinalAssistantMessage(result.assistant_reply);
+          setContextSnapshot(result.context_snapshot ?? null);
+          onComplete({
+            sessionId: result.session_id,
+            clientToken: result.client_token ?? clientToken,
+            contextSnapshot: result.context_snapshot ?? null,
+            topTopics: completionTopics,
+            matchingMeta: result.matching_meta ?? null,
+          });
+          return;
+        }
+
+        if (!result.next_question) {
+          throw new Error("Thesinator did not return the next question.");
+        }
+
+        setTurns([
+          ...nextTurns,
+          {
+            question: result.next_question,
+            assistantMessage: result.assistant_reply,
+            userAnswer: null,
+          },
+        ]);
       } catch (err) {
         const revertedTurns = [...nextTurns];
         revertedTurns[revertedTurns.length - 1] = {
@@ -2006,7 +2005,7 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
                   {isSubmitting && (
                     <div className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-4 text-muted-foreground">
                       <LoaderCircle size={18} className="animate-spin" />
-                      <span className="ds-small">Preparing your matches...</span>
+                      <span className="ds-small">Thesinator is preparing the next step...</span>
                     </div>
                   )}
 

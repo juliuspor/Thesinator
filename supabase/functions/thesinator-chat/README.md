@@ -11,7 +11,7 @@ supabase secrets set ELEVENLABS_VOICE_ID=...
 supabase secrets set OPENAI_API_KEY=...
 # Optional
 supabase secrets set ELEVENLABS_MODEL_ID=eleven_multilingual_v2
-supabase secrets set ANTHROPIC_MODEL=claude-3-5-sonnet-latest
+supabase secrets set ANTHROPIC_MODEL=claude-3-5-haiku-latest
 supabase secrets set OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # optional auto-heal tuning
 supabase secrets set TOPIC_EMBED_AUTO_HEAL_MAX=200

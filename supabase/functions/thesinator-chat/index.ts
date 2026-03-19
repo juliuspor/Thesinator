@@ -162,6 +162,16 @@ const buildAssistantReply = (
   return `${normalized}\n\nNext question: ${nextQuestion.question}`;
 };
 
+const toSingleSentence = (value: string): string => {
+  const trimmed = value.trim().replace(/\s+/g, " ");
+  if (trimmed.length === 0) {
+    return "Thanks for sharing that.";
+  }
+
+  const match = trimmed.match(/(.+?[.!?])(?=\s|$)/);
+  return match?.[1]?.trim() || trimmed;
+};
+
 const buildAnthropicPrompt = (input: {
   currentQuestion: ThesinatorQuestion;
   currentQuestionIndex: number;
@@ -170,7 +180,7 @@ const buildAnthropicPrompt = (input: {
 }) => {
   const promptPayload = {
     instruction:
-      "Reflect briefly in English on the user answer and update only inferable fields in snapshot_patch. Keep unknown fields omitted from patch.",
+      "Write exactly one short English sentence that refers to the user's latest answer. Do not ask the next question yourself. Update only inferable fields in snapshot_patch and omit unknown fields from the patch.",
     question_order: THESINATOR_QUESTIONS.map((q, index) => ({
       index,
       id: q.id,
@@ -216,7 +226,7 @@ const callAnthropic = async (input: {
     throw new Error("Missing ANTHROPIC_API_KEY environment variable.");
   }
 
-  const model = Deno.env.get("ANTHROPIC_MODEL") ?? "claude-3-5-sonnet-latest";
+  const model = Deno.env.get("ANTHROPIC_MODEL") ?? "claude-3-5-haiku-latest";
 
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -256,7 +266,7 @@ const callAnthropic = async (input: {
 
   const assistantReply =
     typeof parsed.assistant_reply === "string" && parsed.assistant_reply.trim().length > 0
-      ? parsed.assistant_reply.trim()
+      ? toSingleSentence(parsed.assistant_reply)
       : "Thanks, that helps me understand your preferences better.";
 
   const snapshotPatch =

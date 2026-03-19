@@ -223,5 +223,5 @@ export const isInputMode = (value: unknown): value is InputMode => {
 };
 
 export const defaultAssistantIntro = (firstQuestion: ThesinatorQuestion): string => {
-  return `Hi, I am Thesinator. I will ask three short questions and adapt my guidance based on your answers. Let's start: ${firstQuestion.question}`;
+  return `Hi, I am Thesinator. I will ask three short questions and adapt my guidance based on your answers. Let's start with question ${firstQuestion.id}.`;
 };
