@@ -1,0 +1,796 @@
+[
+  {
+    "id": "alumni-career-path-01",
+    "sourceProjectId": "project-12",
+    "fullName": "Mara Keller",
+    "graduationYear": 2026,
+    "universityId": "uni-04",
+    "universityName": "University of Zurich",
+    "thesisDegreeLevel": "msc",
+    "fieldIds": ["field-01", "field-03"],
+    "fieldNames": ["Computer Science", "Artificial Intelligence"],
+    "thesis": {
+      "title": "Knowledge Graphs for Scientific Literature Discovery",
+      "topicId": "topic-39",
+      "topicTitle": "Knowledge Graph Construction from Unstructured Scientific Literature",
+      "type": "Master Thesis",
+      "stateAtGraduation": "completed",
+      "summary": "Built an automated NLP pipeline for extracting entities and relations from scientific publications and constructing a domain-specific knowledge graph.",
+      "supervisorIds": ["supervisor-09"],
+      "supervisorNames": ["Prof. Dr. Abraham Bernstein"],
+      "companyId": null,
+      "companyName": null,
+      "expertIds": []
+    },
+    "internships": [
+      {
+        "title": "Research Assistant, Semantic Systems",
+        "organizationType": "university",
+        "organizationName": "University of Zurich",
+        "startYear": 2025,
+        "endYear": 2026,
+        "focusFieldIds": ["field-01", "field-03"]
+      }
+    ],
+    "careerStages": [
+      {
+        "stageOrder": 1,
+        "type": "education",
+        "title": "MSc Student in Informatics",
+        "organizationName": "University of Zurich",
+        "startYear": 2024,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 2,
+        "type": "thesis",
+        "title": "Knowledge Graph Construction from Unstructured Scientific Literature",
+        "organizationName": "University of Zurich",
+        "startYear": 2025,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 3,
+        "type": "full_time",
+        "title": "NLP Engineer",
+        "organizationName": "Swiss AI Research Lab",
+        "startYear": 2026,
+        "endYear": null
+      }
+    ],
+    "mentors": [
+      {
+        "name": "Prof. Dr. Abraham Bernstein",
+        "role": "Academic Supervisor",
+        "organizationName": "University of Zurich",
+        "linkedEntityId": "supervisor-09"
+      }
+    ],
+    "connections": [
+      {
+        "name": "Digital Society Initiative Research Network",
+        "relationship": "Research network built during thesis",
+        "organizationName": "University of Zurich"
+      }
+    ],
+    "currentOutcome": {
+      "roleTitle": "NLP Engineer",
+      "companyName": "Swiss AI Research Lab",
+      "careerTrack": "applied_ai",
+      "thesisCompanyConversion": false
+    },
+    "keySkillsBuilt": [
+      "knowledge graphs",
+      "entity extraction",
+      "human-ai collaboration",
+      "scientific NLP"
+    ],
+    "careerOutcomeTags": ["AI", "NLP", "Research Engineering"]
+  },
+  {
+    "id": "alumni-career-path-02",
+    "sourceProjectId": "project-13",
+    "fullName": "Lukas Frei",
+    "graduationYear": 2026,
+    "universityId": "uni-07",
+    "universityName": "ZHAW",
+    "thesisDegreeLevel": "msc",
+    "fieldIds": ["field-09", "field-07"],
+    "fieldNames": ["Mechanical Engineering", "Supply Chain Management"],
+    "thesis": {
+      "title": "Digital Twin Prototype for Collaborative Robot Work Cells",
+      "topicId": "topic-05",
+      "topicTitle": "Digital Twin for Collaborative Robot Work Cells",
+      "type": "Master Thesis",
+      "stateAtGraduation": "completed",
+      "summary": "Developed a simulation-based digital twin of an ABB collaborative robot work cell using real-time sensor data and predictive maintenance logic.",
+      "supervisorIds": ["supervisor-17"],
+      "supervisorNames": ["Prof. Dr. Daniel Schilter"],
+      "companyId": "company-03",
+      "companyName": "ABB",
+      "expertIds": ["expert-05"],
+      "expertNames": ["Sven Eriksson"]
+    },
+    "internships": [
+      {
+        "title": "Industrial Automation Intern",
+        "organizationType": "company",
+        "organizationName": "ABB",
+        "organizationId": "company-03",
+        "startYear": 2025,
+        "endYear": 2025,
+        "focusFieldIds": ["field-09", "field-10"]
+      }
+    ],
+    "careerStages": [
+      {
+        "stageOrder": 1,
+        "type": "education",
+        "title": "MSc Student in Engineering",
+        "organizationName": "ZHAW",
+        "startYear": 2024,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 2,
+        "type": "internship",
+        "title": "Industrial Automation Intern",
+        "organizationName": "ABB",
+        "startYear": 2025,
+        "endYear": 2025
+      },
+      {
+        "stageOrder": 3,
+        "type": "thesis",
+        "title": "Digital Twin for Collaborative Robot Work Cells",
+        "organizationName": "ABB",
+        "startYear": 2025,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 4,
+        "type": "full_time",
+        "title": "Digital Twin Engineer",
+        "organizationName": "ABB",
+        "startYear": 2026,
+        "endYear": null
+      }
+    ],
+    "mentors": [
+      {
+        "name": "Prof. Dr. Daniel Schilter",
+        "role": "Academic Supervisor",
+        "organizationName": "ZHAW",
+        "linkedEntityId": "supervisor-17"
+      },
+      {
+        "name": "Sven Eriksson",
+        "role": "Industry Expert",
+        "organizationName": "ABB",
+        "linkedEntityId": "expert-05"
+      }
+    ],
+    "connections": [
+      {
+        "name": "ABB Robotics R&D Team",
+        "relationship": "Thesis collaboration network",
+        "organizationName": "ABB"
+      }
+    ],
+    "currentOutcome": {
+      "roleTitle": "Digital Twin Engineer",
+      "companyName": "ABB",
+      "careerTrack": "industrial_ai",
+      "thesisCompanyConversion": true
+    },
+    "keySkillsBuilt": [
+      "digital twins",
+      "robotics simulation",
+      "predictive maintenance",
+      "sensor integration"
+    ],
+    "careerOutcomeTags": ["Robotics", "Industry 4.0", "Industrial AI"]
+  },
+  {
+    "id": "alumni-career-path-03",
+    "sourceProjectId": "project-08",
+    "fullName": "Nina Schmid",
+    "graduationYear": 2026,
+    "universityId": "uni-04",
+    "universityName": "University of Zurich",
+    "thesisDegreeLevel": "msc",
+    "fieldIds": ["field-02", "field-01"],
+    "fieldNames": ["Data Science", "Computer Science"],
+    "thesis": {
+      "title": "Predictive Maintenance System for SBB Train Bogies",
+      "topicId": "topic-09",
+      "topicTitle": "Predictive Maintenance for Rolling Stock Using IoT Data",
+      "type": "Master Thesis",
+      "stateAtGraduation": "in_progress",
+      "summary": "Built anomaly detection models on IoT telemetry and maintenance logs to predict failures in rolling stock components.",
+      "supervisorIds": ["supervisor-09"],
+      "supervisorNames": ["Prof. Dr. Abraham Bernstein"],
+      "companyId": "company-05",
+      "companyName": "SBB",
+      "expertIds": ["expert-09"],
+      "expertNames": ["Patrick Zollinger"]
+    },
+    "internships": [
+      {
+        "title": "Data Engineering Intern",
+        "organizationType": "company",
+        "organizationName": "SBB",
+        "organizationId": "company-05",
+        "startYear": 2025,
+        "endYear": 2025,
+        "focusFieldIds": ["field-02", "field-01"]
+      }
+    ],
+    "careerStages": [
+      {
+        "stageOrder": 1,
+        "type": "education",
+        "title": "MSc Student in Data Systems",
+        "organizationName": "University of Zurich",
+        "startYear": 2024,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 2,
+        "type": "internship",
+        "title": "Data Engineering Intern",
+        "organizationName": "SBB",
+        "startYear": 2025,
+        "endYear": 2025
+      },
+      {
+        "stageOrder": 3,
+        "type": "thesis",
+        "title": "Predictive Maintenance System for SBB Train Bogies",
+        "organizationName": "SBB",
+        "startYear": 2025,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 4,
+        "type": "full_time",
+        "title": "ML Engineer for Mobility Analytics",
+        "organizationName": "SBB",
+        "startYear": 2026,
+        "endYear": null
+      }
+    ],
+    "mentors": [
+      {
+        "name": "Prof. Dr. Abraham Bernstein",
+        "role": "Academic Supervisor",
+        "organizationName": "University of Zurich",
+        "linkedEntityId": "supervisor-09"
+      },
+      {
+        "name": "Patrick Zollinger",
+        "role": "Industry Expert",
+        "organizationName": "SBB",
+        "linkedEntityId": "expert-09"
+      }
+    ],
+    "connections": [
+      {
+        "name": "SBB Data Analytics & AI Division",
+        "relationship": "Operational team exposure during thesis",
+        "organizationName": "SBB"
+      }
+    ],
+    "currentOutcome": {
+      "roleTitle": "ML Engineer for Mobility Analytics",
+      "companyName": "SBB",
+      "careerTrack": "mobility_ai",
+      "thesisCompanyConversion": true
+    },
+    "keySkillsBuilt": [
+      "anomaly detection",
+      "iot analytics",
+      "predictive maintenance",
+      "transport operations"
+    ],
+    "careerOutcomeTags": ["Mobility", "Data Science", "Predictive Maintenance"]
+  },
+  {
+    "id": "alumni-career-path-04",
+    "sourceProjectId": "project-10",
+    "fullName": "Elia Romano",
+    "graduationYear": 2026,
+    "universityId": "uni-02",
+    "universityName": "EPFL",
+    "thesisDegreeLevel": "phd",
+    "fieldIds": ["field-03", "field-11"],
+    "fieldNames": ["Artificial Intelligence", "Biotechnology"],
+    "thesis": {
+      "title": "Generative Models for Lead Optimization in Oncology",
+      "topicId": "topic-15",
+      "topicTitle": "Generative Models for Molecular Lead Optimization",
+      "type": "Doctoral Research Thesis",
+      "stateAtGraduation": "in_progress",
+      "summary": "Compared generative AI methods for optimizing lead compounds in oncology with docking simulations and proprietary molecular libraries.",
+      "supervisorIds": ["supervisor-04"],
+      "supervisorNames": ["Prof. Dr. Bruno Correia"],
+      "companyId": "company-08",
+      "companyName": "Novartis",
+      "expertIds": ["expert-15"],
+      "expertNames": ["Rahel Ammann"]
+    },
+    "internships": [
+      {
+        "title": "Computational Biology Research Intern",
+        "organizationType": "company",
+        "organizationName": "Novartis",
+        "organizationId": "company-08",
+        "startYear": 2024,
+        "endYear": 2024,
+        "focusFieldIds": ["field-03", "field-11"]
+      }
+    ],
+    "careerStages": [
+      {
+        "stageOrder": 1,
+        "type": "education",
+        "title": "PhD Researcher in Computational Biology",
+        "organizationName": "EPFL",
+        "startYear": 2023,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 2,
+        "type": "internship",
+        "title": "Computational Biology Research Intern",
+        "organizationName": "Novartis",
+        "startYear": 2024,
+        "endYear": 2024
+      },
+      {
+        "stageOrder": 3,
+        "type": "thesis",
+        "title": "Generative Models for Molecular Lead Optimization",
+        "organizationName": "Novartis",
+        "startYear": 2024,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 4,
+        "type": "full_time",
+        "title": "Scientist, AI Drug Discovery",
+        "organizationName": "Novartis",
+        "startYear": 2026,
+        "endYear": null
+      }
+    ],
+    "mentors": [
+      {
+        "name": "Prof. Dr. Bruno Correia",
+        "role": "Academic Supervisor",
+        "organizationName": "EPFL",
+        "linkedEntityId": "supervisor-04"
+      },
+      {
+        "name": "Rahel Ammann",
+        "role": "Industry Expert",
+        "organizationName": "Novartis",
+        "linkedEntityId": "expert-15"
+      }
+    ],
+    "connections": [
+      {
+        "name": "Novartis AI in Drug Discovery Network",
+        "relationship": "Research collaboration and hiring channel",
+        "organizationName": "Novartis"
+      }
+    ],
+    "currentOutcome": {
+      "roleTitle": "Scientist, AI Drug Discovery",
+      "companyName": "Novartis",
+      "careerTrack": "pharma_ai_research",
+      "thesisCompanyConversion": true
+    },
+    "keySkillsBuilt": [
+      "generative models",
+      "computational biology",
+      "drug discovery",
+      "molecular optimization"
+    ],
+    "careerOutcomeTags": ["Pharma", "AI", "Drug Discovery"]
+  },
+  {
+    "id": "alumni-career-path-05",
+    "sourceProjectId": "project-06",
+    "fullName": "Jonas Brunner",
+    "graduationYear": 2026,
+    "universityId": "uni-03",
+    "universityName": "University of St. Gallen (HSG)",
+    "thesisDegreeLevel": "msc",
+    "fieldIds": ["field-02", "field-05"],
+    "fieldNames": ["Data Science", "Finance"],
+    "thesis": {
+      "title": "Climate Risk Assessment Using Satellite and IoT Data for Reinsurance",
+      "topicId": "topic-11",
+      "topicTitle": "Climate Risk Modeling with Alternative Data Sources",
+      "type": "Master Thesis",
+      "stateAtGraduation": "agreed",
+      "summary": "Combined satellite imagery, IoT sensor data and catastrophe-risk modeling logic for climate-related reinsurance use cases.",
+      "supervisorIds": ["supervisor-06"],
+      "supervisorNames": ["Prof. Dr. Andreas Herrmann"],
+      "companyId": "company-06",
+      "companyName": "Swiss Re",
+      "expertIds": ["expert-11"],
+      "expertNames": ["Julian Kraft"]
+    },
+    "internships": [
+      {
+        "title": "Risk Analytics Intern",
+        "organizationType": "company",
+        "organizationName": "Swiss Re",
+        "organizationId": "company-06",
+        "startYear": 2025,
+        "endYear": 2025,
+        "focusFieldIds": ["field-05", "field-02"]
+      }
+    ],
+    "careerStages": [
+      {
+        "stageOrder": 1,
+        "type": "education",
+        "title": "MSc Student in Finance and Analytics",
+        "organizationName": "University of St. Gallen (HSG)",
+        "startYear": 2024,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 2,
+        "type": "internship",
+        "title": "Risk Analytics Intern",
+        "organizationName": "Swiss Re",
+        "startYear": 2025,
+        "endYear": 2025
+      },
+      {
+        "stageOrder": 3,
+        "type": "thesis",
+        "title": "Climate Risk Modeling with Alternative Data Sources",
+        "organizationName": "Swiss Re",
+        "startYear": 2025,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 4,
+        "type": "full_time",
+        "title": "Climate Risk Analyst",
+        "organizationName": "Swiss Re",
+        "startYear": 2026,
+        "endYear": null
+      }
+    ],
+    "mentors": [
+      {
+        "name": "Prof. Dr. Andreas Herrmann",
+        "role": "Academic Supervisor",
+        "organizationName": "University of St. Gallen (HSG)",
+        "linkedEntityId": "supervisor-06"
+      },
+      {
+        "name": "Julian Kraft",
+        "role": "Industry Expert",
+        "organizationName": "Swiss Re",
+        "linkedEntityId": "expert-11"
+      }
+    ],
+    "connections": [
+      {
+        "name": "Swiss Re Catastrophe Analytics Team",
+        "relationship": "Professional network built through thesis",
+        "organizationName": "Swiss Re"
+      }
+    ],
+    "currentOutcome": {
+      "roleTitle": "Climate Risk Analyst",
+      "companyName": "Swiss Re",
+      "careerTrack": "risk_analytics",
+      "thesisCompanyConversion": true
+    },
+    "keySkillsBuilt": [
+      "climate risk modeling",
+      "alternative data",
+      "catastrophe analytics",
+      "financial modeling"
+    ],
+    "careerOutcomeTags": ["Insurance", "Climate Risk", "Analytics"]
+  },
+  {
+    "id": "alumni-career-path-06",
+    "sourceProjectId": "project-05",
+    "fullName": "Sophie Wenger",
+    "graduationYear": 2026,
+    "universityId": "uni-08",
+    "universityName": "FHNW",
+    "thesisDegreeLevel": "msc",
+    "fieldIds": ["field-12", "field-03"],
+    "fieldNames": ["Healthcare & Medicine", "Artificial Intelligence"],
+    "thesis": {
+      "title": "Digital Health Pipeline for Wearable-Based Clinical Endpoints",
+      "topicId": "topic-04",
+      "topicTitle": "Wearable-Based Patient Monitoring for Clinical Trials",
+      "type": "Master Thesis",
+      "stateAtGraduation": "applied",
+      "summary": "Designed a pipeline for wearable-based patient monitoring and clinically meaningful endpoints in decentralized clinical trials.",
+      "supervisorIds": [],
+      "supervisorNames": [],
+      "companyId": "company-02",
+      "companyName": "Roche",
+      "expertIds": ["expert-04"],
+      "expertNames": ["Thomas Reinhardt"]
+    },
+    "internships": [
+      {
+        "title": "Digital Health Intern",
+        "organizationType": "company",
+        "organizationName": "Roche",
+        "organizationId": "company-02",
+        "startYear": 2025,
+        "endYear": 2025,
+        "focusFieldIds": ["field-12", "field-03"]
+      }
+    ],
+    "careerStages": [
+      {
+        "stageOrder": 1,
+        "type": "education",
+        "title": "MSc Student in Data-Driven Health",
+        "organizationName": "FHNW",
+        "startYear": 2024,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 2,
+        "type": "internship",
+        "title": "Digital Health Intern",
+        "organizationName": "Roche",
+        "startYear": 2025,
+        "endYear": 2025
+      },
+      {
+        "stageOrder": 3,
+        "type": "thesis",
+        "title": "Wearable-Based Patient Monitoring for Clinical Trials",
+        "organizationName": "Roche",
+        "startYear": 2025,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 4,
+        "type": "full_time",
+        "title": "Digital Health Data Scientist",
+        "organizationName": "Roche",
+        "startYear": 2026,
+        "endYear": null
+      }
+    ],
+    "mentors": [
+      {
+        "name": "Thomas Reinhardt",
+        "role": "Industry Expert",
+        "organizationName": "Roche",
+        "linkedEntityId": "expert-04"
+      }
+    ],
+    "connections": [
+      {
+        "name": "Roche Digital Health Innovation Team",
+        "relationship": "Thesis and internship network",
+        "organizationName": "Roche"
+      }
+    ],
+    "currentOutcome": {
+      "roleTitle": "Digital Health Data Scientist",
+      "companyName": "Roche",
+      "careerTrack": "digital_health",
+      "thesisCompanyConversion": true
+    },
+    "keySkillsBuilt": [
+      "wearable analytics",
+      "clinical data pipelines",
+      "privacy-aware health data processing",
+      "digital endpoints"
+    ],
+    "careerOutcomeTags": ["HealthTech", "Clinical AI", "Digital Health"]
+  },
+  {
+    "id": "alumni-career-path-07",
+    "sourceProjectId": "project-11",
+    "fullName": "Timo Gmür",
+    "graduationYear": 2026,
+    "universityId": "uni-09",
+    "universityName": "OST – Eastern Switzerland University of Applied Sciences",
+    "thesisDegreeLevel": "msc",
+    "fieldIds": ["field-10", "field-17"],
+    "fieldNames": ["Electrical Engineering", "Environmental Science"],
+    "thesis": {
+      "title": "Battery Storage Optimization for Alpine Microgrids",
+      "topicId": "topic-53",
+      "topicTitle": "Optimal Battery Storage Sizing for Alpine Microgrid Communities",
+      "type": "Master Thesis",
+      "stateAtGraduation": "in_progress",
+      "summary": "Modeled storage sizing and techno-economic trade-offs for renewable off-grid Alpine energy systems.",
+      "supervisorIds": ["supervisor-23"],
+      "supervisorNames": ["Prof. Dr. Sandra Tretter"],
+      "companyId": null,
+      "companyName": null,
+      "expertIds": []
+    },
+    "internships": [
+      {
+        "title": "Energy Systems Intern",
+        "organizationType": "company",
+        "organizationName": "Regional Utility Partner",
+        "startYear": 2025,
+        "endYear": 2025,
+        "focusFieldIds": ["field-10", "field-17"]
+      }
+    ],
+    "careerStages": [
+      {
+        "stageOrder": 1,
+        "type": "education",
+        "title": "MSc Student in Energy Systems",
+        "organizationName": "OST – Eastern Switzerland University of Applied Sciences",
+        "startYear": 2024,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 2,
+        "type": "internship",
+        "title": "Energy Systems Intern",
+        "organizationName": "Regional Utility Partner",
+        "startYear": 2025,
+        "endYear": 2025
+      },
+      {
+        "stageOrder": 3,
+        "type": "thesis",
+        "title": "Optimal Battery Storage Sizing for Alpine Microgrid Communities",
+        "organizationName": "OST – Eastern Switzerland University of Applied Sciences",
+        "startYear": 2025,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 4,
+        "type": "full_time",
+        "title": "Grid Integration Engineer",
+        "organizationName": "Swiss Energy Solutions AG",
+        "startYear": 2026,
+        "endYear": null
+      }
+    ],
+    "mentors": [
+      {
+        "name": "Prof. Dr. Sandra Tretter",
+        "role": "Academic Supervisor",
+        "organizationName": "OST – Eastern Switzerland University of Applied Sciences",
+        "linkedEntityId": "supervisor-23"
+      }
+    ],
+    "connections": [
+      {
+        "name": "Swiss Energy Systems Research Circle",
+        "relationship": "Academic and industry contacts from storage research",
+        "organizationName": "OST"
+      }
+    ],
+    "currentOutcome": {
+      "roleTitle": "Grid Integration Engineer",
+      "companyName": "Swiss Energy Solutions AG",
+      "careerTrack": "energy_systems",
+      "thesisCompanyConversion": false
+    },
+    "keySkillsBuilt": [
+      "battery optimization",
+      "microgrid simulation",
+      "renewable integration",
+      "techno-economic analysis"
+    ],
+    "careerOutcomeTags": ["Energy", "Microgrids", "Climate Tech"]
+  },
+  {
+    "id": "alumni-career-path-08",
+    "sourceProjectId": "project-09",
+    "fullName": "Giulia Bernasconi",
+    "graduationYear": 2026,
+    "universityId": "uni-07",
+    "universityName": "ZHAW",
+    "thesisDegreeLevel": "msc",
+    "fieldIds": ["field-03", "field-15"],
+    "fieldNames": ["Artificial Intelligence", "Communication & Media"],
+    "thesis": {
+      "title": "Multilingual Sentiment Analysis for Swiss Public Discourse",
+      "topicId": "topic-46",
+      "topicTitle": "Multilingual Sentiment Analysis for Swiss Public Discourse",
+      "type": "Master Thesis",
+      "stateAtGraduation": "in_progress",
+      "summary": "Developed a multilingual transformer-based sentiment analysis system for Swiss news and social media across German, French, Italian and Romansh.",
+      "supervisorIds": ["supervisor-16"],
+      "supervisorNames": ["Prof. Dr. Elena Gavagnin"],
+      "companyId": null,
+      "companyName": null,
+      "expertIds": []
+    },
+    "internships": [
+      {
+        "title": "Language AI Intern",
+        "organizationType": "company",
+        "organizationName": "Swiss Media Analytics Startup",
+        "startYear": 2025,
+        "endYear": 2025,
+        "focusFieldIds": ["field-03", "field-15"]
+      }
+    ],
+    "careerStages": [
+      {
+        "stageOrder": 1,
+        "type": "education",
+        "title": "MSc Student in Applied NLP",
+        "organizationName": "ZHAW",
+        "startYear": 2024,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 2,
+        "type": "internship",
+        "title": "Language AI Intern",
+        "organizationName": "Swiss Media Analytics Startup",
+        "startYear": 2025,
+        "endYear": 2025
+      },
+      {
+        "stageOrder": 3,
+        "type": "thesis",
+        "title": "Multilingual Sentiment Analysis for Swiss Public Discourse",
+        "organizationName": "ZHAW",
+        "startYear": 2025,
+        "endYear": 2026
+      },
+      {
+        "stageOrder": 4,
+        "type": "full_time",
+        "title": "Multilingual NLP Specialist",
+        "organizationName": "Swiss Media Analytics Startup",
+        "startYear": 2026,
+        "endYear": null
+      }
+    ],
+    "mentors": [
+      {
+        "name": "Prof. Dr. Elena Gavagnin",
+        "role": "Academic Supervisor",
+        "organizationName": "ZHAW",
+        "linkedEntityId": "supervisor-16"
+      }
+    ],
+    "connections": [
+      {
+        "name": "Multilingual AI Research Community",
+        "relationship": "Academic collaboration network",
+        "organizationName": "ZHAW"
+      }
+    ],
+    "currentOutcome": {
+      "roleTitle": "Multilingual NLP Specialist",
+      "companyName": "Swiss Media Analytics Startup",
+      "careerTrack": "language_ai",
+      "thesisCompanyConversion": false
+    },
+    "keySkillsBuilt": [
+      "multilingual NLP",
+      "transformer fine-tuning",
+      "social media analytics",
+      "Swiss language processing"
+    ],
+    "careerOutcomeTags": ["NLP", "Media AI", "Multilingual Systems"]
+  }
+]

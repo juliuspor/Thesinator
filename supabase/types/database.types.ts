@@ -34,6 +34,72 @@ export type Database = {
   }
   public: {
     Tables: {
+      alumni_paths: {
+        Row: {
+          career_outcome_tags: string[]
+          career_stages: Json
+          connections: Json
+          created_at: string
+          current_outcome: Json
+          field_ids: string[]
+          field_names: string[]
+          full_name: string
+          graduation_year: number
+          id: string
+          internships: Json
+          key_skills_built: string[]
+          mentors: Json
+          source_project_id: string
+          thesis: Json
+          thesis_degree_level: string
+          university_id: string
+          university_name: string
+          updated_at: string
+        }
+        Insert: {
+          career_outcome_tags?: string[]
+          career_stages?: Json
+          connections?: Json
+          created_at?: string
+          current_outcome?: Json
+          field_ids?: string[]
+          field_names?: string[]
+          full_name: string
+          graduation_year: number
+          id: string
+          internships?: Json
+          key_skills_built?: string[]
+          mentors?: Json
+          source_project_id: string
+          thesis?: Json
+          thesis_degree_level: string
+          university_id: string
+          university_name: string
+          updated_at?: string
+        }
+        Update: {
+          career_outcome_tags?: string[]
+          career_stages?: Json
+          connections?: Json
+          created_at?: string
+          current_outcome?: Json
+          field_ids?: string[]
+          field_names?: string[]
+          full_name?: string
+          graduation_year?: number
+          id?: string
+          internships?: Json
+          key_skills_built?: string[]
+          mentors?: Json
+          source_project_id?: string
+          thesis?: Json
+          thesis_degree_level?: string
+          university_id?: string
+          university_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       companies: {
         Row: {
           about: string | null
@@ -1132,6 +1198,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_thesinator_vector_health: {
+        Args: never
+        Returns: {
+          completed_sessions_total: number
+          completed_sessions_with_vector: number
+          completed_sessions_with_vector_rate: number
+          matches_total: number
+          matches_used_vector: number
+          matches_used_vector_rate: number
+          profiles_embedding_coverage: number
+          profiles_total: number
+          profiles_with_embedding: number
+          topics_embedding_coverage: number
+          topics_total: number
+          topics_with_embedding: number
+        }[]
+      }
       get_top_thesis_topics: {
         Args: { p_limit?: number; p_session_id: string }
         Returns: {

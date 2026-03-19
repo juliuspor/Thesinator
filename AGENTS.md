@@ -80,9 +80,15 @@ supabase gen types typescript --local > supabase/types/database.types.ts
 ```
 
 ### Embeddings Backfill
-Use after seeding or topic updates:
+Use after seeding or topic updates. Keep local script vars in `supabase/.env` as `LOCAL_SUPABASE_URL` and `LOCAL_SUPABASE_SERVICE_ROLE_KEY` (not `SUPABASE_*`, which are reserved by the Edge runtime):
 ```bash
-deno run --allow-net --allow-env scripts/embed-seed.ts
+set -a; source supabase/.env; set +a
+npx -y deno run --allow-net --allow-env scripts/embed-seed.ts
+```
+
+### Vector Health Check
+```bash
+docker exec supabase_db_starthack psql -U postgres -d postgres -c "select * from public.get_thesinator_vector_health();"
 ```
 
 ### Thesinator Smoke Test (Local)
