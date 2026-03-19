@@ -18,6 +18,8 @@ from ..models.project import ProjectManager, ProjectStatus
 from ..models.task import TaskManager, TaskStatus
 from ..services.graph_builder import GraphBuilderService
 from ..services.ontology_generator import OntologyGenerator
+from ..services.simulation_manager import SimulationManager, SimulationStatus
+from ..services.simulation_runner import RunnerStatus, SimulationRunner
 from ..services.text_processor import TextProcessor
 from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
@@ -29,6 +31,14 @@ DEFAULT_GRAPH_SCENARIO = (
     "Capture the student, thesis directions, companies, universities, supervisors, experts, "
     "and adjacent organizations that shape the path."
 )
+
+DEFAULT_SWARM_SCENARIO = (
+    "Simulate a thesis-to-career future around this student's top thesis directions. "
+    "Model how the student, supervisors, experts, universities, and companies influence the path. "
+    "Keep the run grounded, practical, and useful for a student-facing live future view."
+)
+DEFAULT_SWARM_PLATFORM = "parallel"
+DEFAULT_SWARM_MAX_ROUNDS = 8
 
 
 def _string(value: Any) -> str:
@@ -249,6 +259,234 @@ def _build_preview_from_graph_data(graph_data: Dict[str, Any]) -> Dict[str, Any]
     }
 
 
+def _clamp_progress(value: Any) -> int:
+    if isinstance(value, (int, float)):
+        return max(0, min(100, int(round(value))))
+    return 0
+
+
+def _normalize_action(entry: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "round_num": int(entry.get("round_num") or 0),
+        "timestamp": _string(entry.get("timestamp")) or None,
+        "platform": _string(entry.get("platform")) or None,
+        "agent_id": int(entry.get("agent_id") or 0),
+        "agent_name": _string(entry.get("agent_name")) or "Agent",
+        "action_type": _string(entry.get("action_type")) or "ACTION",
+        "action_args": entry.get("action_args") if isinstance(entry.get("action_args"), dict) else {},
+        "result": _string(entry.get("result")) or None,
+        "success": entry.get("success") is not False,
+    }
+
+
+def _swarm_status_from_state(
+    task_status: Optional[str],
+    runner_status: Optional[str],
+    simulation_status: Optional[str],
+) -> str:
+    if runner_status == RunnerStatus.FAILED.value or task_status == TaskStatus.FAILED.value:
+        return "failed"
+    if runner_status == RunnerStatus.RUNNING.value:
+        return "running"
+    if runner_status in {
+        RunnerStatus.COMPLETED.value,
+        RunnerStatus.STOPPED.value,
+        RunnerStatus.PAUSED.value,
+    }:
+        return "ready"
+    if task_status in {TaskStatus.PENDING.value, TaskStatus.PROCESSING.value}:
+        return "preparing"
+    if simulation_status == SimulationStatus.FAILED.value:
+        return "failed"
+    if simulation_status in {
+        SimulationStatus.PREPARING.value,
+        SimulationStatus.READY.value,
+        SimulationStatus.RUNNING.value,
+        SimulationStatus.PAUSED.value,
+        SimulationStatus.COMPLETED.value,
+    }:
+        return "preparing"
+    return "queued"
+
+
+def _swarm_stage_label(
+    task: Optional[Any],
+    runner_status: Optional[str],
+    derived_status: str,
+) -> Optional[str]:
+    if runner_status == RunnerStatus.RUNNING.value:
+        return "Future path running live"
+    if runner_status in {
+        RunnerStatus.COMPLETED.value,
+        RunnerStatus.STOPPED.value,
+        RunnerStatus.PAUSED.value,
+    }:
+        return "Future path ready"
+
+    if task:
+        progress_detail = task.progress_detail if isinstance(task.progress_detail, dict) else {}
+        stage_label = _string(progress_detail.get("stage_label"))
+        if stage_label:
+            return stage_label
+        task_message = _string(task.message)
+        if task_message:
+            return task_message
+
+    if derived_status == "queued":
+        return "Waiting for stakeholder graph"
+    if derived_status == "preparing":
+        return "Preparing agents"
+    if derived_status == "failed":
+        return "Swarm failed"
+    return None
+
+
+def _swarm_message(
+    task: Optional[Any],
+    runner_state: Optional[Dict[str, Any]],
+    derived_status: str,
+) -> Optional[str]:
+    if runner_state and runner_state.get("runner_status") == RunnerStatus.RUNNING.value:
+        total_actions = int(runner_state.get("total_actions_count") or 0)
+        if total_actions > 0:
+            return f"The live future path is running now with {total_actions} agent actions so far."
+        return "The live future path is running now."
+
+    if task:
+        task_message = _string(task.message)
+        if task_message:
+            return task_message
+
+    if derived_status == "queued":
+        return "The stakeholder graph is still building. The swarm will start next."
+    if derived_status == "preparing":
+        return "MiroFish is preparing the agents and simulation world."
+    if derived_status == "ready":
+        return "The live future path finished and is ready to explore."
+    if derived_status == "failed":
+        return "The live future path could not be completed."
+    return None
+
+
+def _swarm_progress(
+    task: Optional[Any],
+    runner_state: Optional[Dict[str, Any]],
+    derived_status: str,
+) -> int:
+    if runner_state:
+        runner_status = _string(runner_state.get("runner_status"))
+        if runner_status in {
+            RunnerStatus.RUNNING.value,
+            RunnerStatus.COMPLETED.value,
+            RunnerStatus.STOPPED.value,
+            RunnerStatus.PAUSED.value,
+        }:
+            if derived_status == "ready":
+                return 100
+            return _clamp_progress(runner_state.get("progress_percent"))
+
+    if task:
+        return _clamp_progress(getattr(task, "progress", 0))
+
+    if derived_status == "ready":
+        return 100
+    return 0
+
+
+def _swarm_events(
+    task: Optional[Any],
+    runner_state: Optional[Dict[str, Any]],
+    derived_status: str,
+    stage_label: Optional[str],
+    error: Optional[str],
+) -> List[Dict[str, Any]]:
+    events: List[Dict[str, Any]] = []
+
+    if task and isinstance(task.events, list):
+        for entry in task.events:
+            if not isinstance(entry, dict):
+                continue
+            events.append({
+                "timestamp": _string(entry.get("timestamp")) or None,
+                "message": _string(entry.get("message")) or None,
+                "stage_label": _string(entry.get("stage_label")) or None,
+                "status": _string(entry.get("status")) or None,
+                "progress": _clamp_progress(entry.get("progress")),
+                "error": _string(entry.get("error")) or None,
+            })
+
+    if runner_state:
+        runner_status = _string(runner_state.get("runner_status"))
+        if runner_status:
+            message = _swarm_message(None, runner_state, derived_status)
+            synthetic_event = {
+                "timestamp": _string(runner_state.get("updated_at")) or _string(runner_state.get("started_at")) or None,
+                "message": message,
+                "stage_label": stage_label,
+                "status": runner_status,
+                "progress": _swarm_progress(None, runner_state, derived_status),
+                "error": _string(runner_state.get("error")) or error,
+            }
+            if not events or events[-1] != synthetic_event:
+                events.append(synthetic_event)
+
+    if not events and stage_label:
+        events.append({
+            "timestamp": None,
+            "message": _swarm_message(None, None, derived_status),
+            "stage_label": stage_label,
+            "status": derived_status,
+            "progress": _swarm_progress(None, None, derived_status),
+            "error": error,
+        })
+
+    return events
+
+
+def _swarm_response_payload(simulation_id: str, prepare_task_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    simulation_manager = SimulationManager()
+    simulation = simulation_manager.get_simulation(simulation_id)
+    task = TaskManager().get_task(prepare_task_id) if prepare_task_id else None
+    run_state = SimulationRunner.get_run_state(simulation_id)
+    run_payload = run_state.to_detail_dict() if run_state else None
+
+    if not simulation and not task and not run_payload:
+        return None
+
+    task_status = task.status.value if task else None
+    runner_status = _string(run_payload.get("runner_status")) if run_payload else None
+    simulation_status = simulation.status.value if simulation else None
+    derived_status = _swarm_status_from_state(task_status, runner_status, simulation_status)
+    stage_label = _swarm_stage_label(task, runner_status, derived_status)
+    error = (
+        _string(run_payload.get("error")) if run_payload else None
+    ) or (task.error if task else None) or (simulation.error if simulation else None)
+    latest_actions = []
+    if run_payload and isinstance(run_payload.get("recent_actions"), list):
+        latest_actions = [
+            _normalize_action(action)
+            for action in run_payload.get("recent_actions", [])[:10]
+            if isinstance(action, dict)
+        ]
+
+    return {
+        "status": derived_status,
+        "stage_label": stage_label,
+        "progress": _swarm_progress(task, run_payload, derived_status),
+        "simulation_id": simulation_id,
+        "prepare_task_id": prepare_task_id,
+        "runner_status": runner_status,
+        "latest_actions": latest_actions,
+        "events": _swarm_events(task, run_payload, derived_status, stage_label, error),
+        "error": error,
+        "metrics": {
+            "twitter_actions_count": int(run_payload.get("twitter_actions_count") or 0) if run_payload else 0,
+            "reddit_actions_count": int(run_payload.get("reddit_actions_count") or 0) if run_payload else 0,
+            "total_actions_count": int(run_payload.get("total_actions_count") or 0) if run_payload else 0,
+        },
+    }
+
+
 def _fallback_detail(future_card: Dict[str, Any]) -> Dict[str, Any]:
     future_role = _string(future_card.get("future_role")) or "Future role"
     future_org = _string(future_card.get("future_organization")) or "a grounded organization"
@@ -424,6 +662,133 @@ def _run_graph_build(project_id: str, task_id: str) -> None:
         )
 
 
+def _run_swarm_prepare_and_start(
+    project_id: str,
+    graph_id: str,
+    simulation_id: str,
+    task_id: str,
+    *,
+    simulation_requirement: str,
+    max_rounds: int,
+    platform: str,
+    enable_graph_memory_update: bool,
+) -> None:
+    task_manager = TaskManager()
+    simulation_manager = SimulationManager()
+
+    try:
+        project = ProjectManager.get_project(project_id)
+        if not project:
+            raise ValueError(f"Project not found: {project_id}")
+
+        document_text = ProjectManager.get_extracted_text(project_id)
+        if not document_text:
+            raise ValueError("Extracted text content not found")
+
+        project.simulation_requirement = simulation_requirement or project.simulation_requirement or DEFAULT_SWARM_SCENARIO
+        ProjectManager.save_project(project)
+
+        _task_progress(
+            task_manager,
+            task_id,
+            status=TaskStatus.PROCESSING,
+            progress=6,
+            message="Preparing the live future path...",
+            stage_label="Preparing agents",
+        )
+
+        stage_labels = {
+            "reading": "Reading graph",
+            "generating_profiles": "Preparing agents",
+            "generating_config": "Configuring simulation",
+            "copying_scripts": "Finalizing run",
+        }
+        stage_weights = {
+            "reading": (8, 28),
+            "generating_profiles": (28, 72),
+            "generating_config": (72, 90),
+            "copying_scripts": (90, 96),
+        }
+
+        def progress_callback(stage: str, progress: int, message: str, **kwargs: Any) -> None:
+            start, end = stage_weights.get(stage, (8, 96))
+            current_progress = start + int((end - start) * max(0, min(100, progress)) / 100)
+            current_item = kwargs.get("current")
+            total_items = kwargs.get("total")
+            detail_message = message
+            if isinstance(current_item, int) and isinstance(total_items, int) and total_items > 0:
+                detail_message = f"{current_item}/{total_items} - {message}"
+
+            _task_progress(
+                task_manager,
+                task_id,
+                status=TaskStatus.PROCESSING,
+                progress=current_progress,
+                message=detail_message,
+                stage_label=stage_labels.get(stage, "Preparing swarm"),
+            )
+
+        simulation_manager.prepare_simulation(
+            simulation_id=simulation_id,
+            simulation_requirement=project.simulation_requirement,
+            document_text=document_text,
+            use_llm_for_profiles=True,
+            progress_callback=progress_callback,
+            parallel_profile_count=3,
+        )
+
+        _task_progress(
+            task_manager,
+            task_id,
+            status=TaskStatus.PROCESSING,
+            progress=97,
+            message="Agent world ready. Starting the live future path...",
+            stage_label="Starting live run",
+        )
+
+        run_state = SimulationRunner.start_simulation(
+            simulation_id=simulation_id,
+            platform=platform,
+            max_rounds=max_rounds,
+            enable_graph_memory_update=enable_graph_memory_update,
+            graph_id=graph_id,
+        )
+
+        _task_progress(
+            task_manager,
+            task_id,
+            status=TaskStatus.COMPLETED,
+            progress=100,
+            message="Future path running live",
+            stage_label="Future path running live",
+            result={
+                "simulation_id": simulation_id,
+                "runner_status": run_state.runner_status.value,
+                "process_pid": run_state.process_pid,
+                "max_rounds": max_rounds,
+            },
+        )
+    except Exception as error:
+        logger.error(f"Studyond swarm failed: {error}")
+        logger.debug(traceback.format_exc())
+
+        simulation_state = simulation_manager.get_simulation(simulation_id)
+        if simulation_state:
+            simulation_state.status = SimulationStatus.FAILED
+            simulation_state.error = str(error)
+            simulation_manager._save_simulation_state(simulation_state)
+
+        _task_progress(
+            task_manager,
+            task_id,
+            status=TaskStatus.FAILED,
+            progress=100,
+            message=f"Future path failed: {error}",
+            stage_label="Failed",
+            error=traceback.format_exc(),
+        )
+
+
 @studyond_bp.route("/graph/start", methods=["POST"])
 def start_studyond_graph():
     """
@@ -583,6 +948,113 @@ def get_studyond_graph_data(graph_id: str):
         }), 500
 
 
+@studyond_bp.route("/swarm/start", methods=["POST"])
+def start_studyond_swarm():
+    task_manager = TaskManager()
+
+    try:
+        payload = request.get_json() or {}
+        project_id = _string(payload.get("project_id"))
+        graph_id = _string(payload.get("graph_id"))
+        simulation_requirement = _string(payload.get("simulation_requirement")) or DEFAULT_SWARM_SCENARIO
+        requested_platform = _string(payload.get("platform")) or DEFAULT_SWARM_PLATFORM
+        platform = requested_platform if requested_platform in {"twitter", "reddit", "parallel"} else DEFAULT_SWARM_PLATFORM
+        max_rounds = payload.get("max_rounds", DEFAULT_SWARM_MAX_ROUNDS)
+        try:
+            max_rounds = int(max_rounds)
+        except (TypeError, ValueError):
+            max_rounds = DEFAULT_SWARM_MAX_ROUNDS
+        max_rounds = max(1, min(24, max_rounds))
+        enable_graph_memory_update = payload.get("enable_graph_memory_update", True) is not False
+
+        if not project_id:
+            return jsonify({
+                "success": False,
+                "error": "Missing project_id",
+            }), 400
+
+        project = ProjectManager.get_project(project_id)
+        if not project:
+            return jsonify({
+                "success": False,
+                "error": f"Project not found: {project_id}",
+            }), 404
+
+        graph_id = graph_id or project.graph_id
+        if not graph_id:
+            return jsonify({
+                "success": False,
+                "error": "Missing graph_id",
+            }), 400
+
+        simulation_manager = SimulationManager()
+        simulation = simulation_manager.create_simulation(
+            project_id=project_id,
+            graph_id=graph_id,
+            enable_twitter=platform in {"twitter", "parallel"},
+            enable_reddit=platform in {"reddit", "parallel"},
+        )
+
+        task_id = task_manager.create_task(
+            "studyond_swarm_prepare",
+            metadata={
+                "project_id": project_id,
+                "simulation_id": simulation.simulation_id,
+            },
+        )
+
+        _task_progress(
+            task_manager,
+            task_id,
+            status=TaskStatus.PENDING,
+            progress=2,
+            message="Scheduling the live future path...",
+            stage_label="Preparing agents",
+        )
+
+        thread = threading.Thread(
+            target=_run_swarm_prepare_and_start,
+            args=(project_id, graph_id, simulation.simulation_id, task_id),
+            kwargs={
+                "simulation_requirement": simulation_requirement,
+                "max_rounds": max_rounds,
+                "platform": platform,
+                "enable_graph_memory_update": enable_graph_memory_update,
+            },
+            daemon=True,
+        )
+        thread.start()
+
+        payload = _swarm_response_payload(simulation.simulation_id, task_id)
+        return jsonify({
+            "success": True,
+            "data": payload,
+        })
+    except Exception as error:
+        logger.error(f"Studyond swarm start failed: {error}")
+        logger.debug(traceback.format_exc())
+        return jsonify({
+            "success": False,
+            "error": str(error),
+        }), 500
+
+
+@studyond_bp.route("/swarm/status/<simulation_id>", methods=["GET"])
+def get_studyond_swarm_status(simulation_id: str):
+    prepare_task_id = _string(request.args.get("prepare_task_id"))
+    payload = _swarm_response_payload(simulation_id, prepare_task_id)
+    if not payload:
+        return jsonify({
+            "success": False,
+            "error": f"Swarm not found: {simulation_id}",
+        }), 404
+
+    return jsonify({
+        "success": True,
+        "data": payload,
+    })
+
+
 @studyond_bp.route("/futures/prepare", methods=["POST"])
 def prepare_studyond_future():
     """
@@ -595,6 +1067,7 @@ def prepare_studyond_future():
 
         seed_text = _string(payload.get("seed_text"))
         future_card = payload.get("future_card") if isinstance(payload.get("future_card"), dict) else {}
+        swarm_highlights = payload.get("swarm_highlights") if isinstance(payload.get("swarm_highlights"), list) else []
         scenario_description = (
             _string(payload.get("scenario_description"))
             or _string(payload.get("scenario_prompt"))
@@ -647,6 +1120,7 @@ def prepare_studyond_future():
                             ),
                             "future_card": future_card,
                             "scenario_description": scenario_description,
+                            "swarm_highlights": swarm_highlights[:8],
                             "seed_text_excerpt": seed_text[:12000],
                             "output_schema": {
                                 "future_detail": {
@@ -690,7 +1164,7 @@ def prepare_studyond_future():
             "success": True,
             "data": {
                 "project_id": project.project_id,
-                "mirofish_simulation_id": project.project_id,
+                "mirofish_project_id": project.project_id,
                 "future_detail": detail,
                 "suggested_prompts": suggested_prompts,
             },

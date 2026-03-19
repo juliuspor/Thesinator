@@ -3,6 +3,7 @@ import { hasSupabaseEnv, supabase, supabaseAnonKey, supabaseUrl } from "@/lib/su
 export type FutureSource = "matched" | "generated";
 export type SimulationStatus = "queued" | "preparing" | "ready" | "failed";
 export type GraphBuildStatus = "queued" | "preparing" | "ready" | "failed";
+export type SwarmStatus = "queued" | "preparing" | "running" | "ready" | "failed";
 
 export type FutureEntitySummary = {
   id: string;
@@ -107,6 +108,40 @@ export type GraphBuildState = {
   events: FutureGraphEvent[];
 };
 
+export type FutureSwarmAction = {
+  round_num: number;
+  timestamp: string | null;
+  platform: string | null;
+  agent_id: number;
+  agent_name: string;
+  action_type: string;
+  action_args: Record<string, unknown>;
+  result: string | null;
+  success: boolean;
+};
+
+export type SwarmState = {
+  status: SwarmStatus;
+  stage_label: string | null;
+  progress: number;
+  simulation_id: string | null;
+  prepare_task_id: string | null;
+  runner_status: string | null;
+  latest_actions: FutureSwarmAction[];
+  events: FutureGraphEvent[];
+  error: string | null;
+  metrics: {
+    twitter_actions_count: number;
+    reddit_actions_count: number;
+    total_actions_count: number;
+  };
+};
+
+export type FutureViewState = {
+  graph_build: GraphBuildState;
+  swarm: SwarmState;
+};
+
 export type FutureSessionState = {
   future_session_id: string;
   matched_futures: FutureCard[];
@@ -115,6 +150,7 @@ export type FutureSessionState = {
   saved_future_ids: string[];
   selected_future_id?: string | null;
   graph_build: GraphBuildState;
+  swarm: SwarmState;
 };
 
 export type FutureDetailResponse = {
@@ -188,8 +224,13 @@ export const getFutureSession = async (futureSessionId: string) =>
     method: "GET",
   });
 
+export const getFutureSessionFutureView = async (futureSessionId: string) =>
+  callFutureSessionsApi<FutureViewState>(`/${futureSessionId}/future-view`, {
+    method: "GET",
+  });
+
 export const getFutureSessionGraph = async (futureSessionId: string) =>
-  callFutureSessionsApi<GraphBuildState>(`/${futureSessionId}/graph`, {
+  callFutureSessionsApi<FutureViewState>(`/${futureSessionId}/graph`, {
     method: "GET",
   });
 

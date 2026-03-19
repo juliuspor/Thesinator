@@ -183,6 +183,190 @@ export type Database = {
         }
         Relationships: []
       }
+      future_session_futures: {
+        Row: {
+          card: Json
+          created_at: string
+          deep_status: string
+          detail: Json | null
+          future_session_id: string
+          id: string
+          map_nodes: Json | null
+          mirofish_simulation_id: string | null
+          preview_status: string
+          rank: number
+          saved: boolean
+          seed_text: string | null
+          source: string
+          suggested_prompts: Json
+          title: string
+          topic_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          card?: Json
+          created_at?: string
+          deep_status?: string
+          detail?: Json | null
+          future_session_id: string
+          id?: string
+          map_nodes?: Json | null
+          mirofish_simulation_id?: string | null
+          preview_status?: string
+          rank: number
+          saved?: boolean
+          seed_text?: string | null
+          source: string
+          suggested_prompts?: Json
+          title: string
+          topic_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          card?: Json
+          created_at?: string
+          deep_status?: string
+          detail?: Json | null
+          future_session_id?: string
+          id?: string
+          map_nodes?: Json | null
+          mirofish_simulation_id?: string | null
+          preview_status?: string
+          rank?: number
+          saved?: boolean
+          seed_text?: string | null
+          source?: string
+          suggested_prompts?: Json
+          title?: string
+          topic_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "future_session_futures_future_session_id_fkey"
+            columns: ["future_session_id"]
+            isOneToOne: false
+            referencedRelation: "future_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "future_session_futures_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "topics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      future_session_messages: {
+        Row: {
+          content: string
+          created_at: string
+          future_id: string
+          id: string
+          role: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          future_id: string
+          id?: string
+          role: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          future_id?: string
+          id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "future_session_messages_future_id_fkey"
+            columns: ["future_id"]
+            isOneToOne: false
+            referencedRelation: "future_session_futures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      future_sessions: {
+        Row: {
+          created_at: string
+          graph_error: string | null
+          graph_id: string | null
+          graph_progress: number
+          graph_stage_label: string | null
+          graph_status: string
+          graph_task_id: string | null
+          id: string
+          mirofish_project_id: string | null
+          selected_future_id: string | null
+          status: string
+          swarm_error: string | null
+          swarm_prepare_task_id: string | null
+          swarm_progress: number
+          swarm_runner_status: string | null
+          swarm_simulation_id: string | null
+          swarm_stage_label: string | null
+          swarm_status: string
+          thesinator_session_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          graph_error?: string | null
+          graph_id?: string | null
+          graph_progress?: number
+          graph_stage_label?: string | null
+          graph_status?: string
+          graph_task_id?: string | null
+          id?: string
+          mirofish_project_id?: string | null
+          selected_future_id?: string | null
+          status?: string
+          swarm_error?: string | null
+          swarm_prepare_task_id?: string | null
+          swarm_progress?: number
+          swarm_runner_status?: string | null
+          swarm_simulation_id?: string | null
+          swarm_stage_label?: string | null
+          swarm_status?: string
+          thesinator_session_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          graph_error?: string | null
+          graph_id?: string | null
+          graph_progress?: number
+          graph_stage_label?: string | null
+          graph_status?: string
+          graph_task_id?: string | null
+          id?: string
+          mirofish_project_id?: string | null
+          selected_future_id?: string | null
+          status?: string
+          swarm_error?: string | null
+          swarm_prepare_task_id?: string | null
+          swarm_progress?: number
+          swarm_runner_status?: string | null
+          swarm_simulation_id?: string | null
+          swarm_stage_label?: string | null
+          swarm_status?: string
+          thesinator_session_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "future_sessions_thesinator_session_id_fkey"
+            columns: ["thesinator_session_id"]
+            isOneToOne: true
+            referencedRelation: "thesinator_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_experts: {
         Row: {
           expert_id: string

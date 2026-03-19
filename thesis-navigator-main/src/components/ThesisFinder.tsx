@@ -39,12 +39,15 @@ import {
   createFutureSession,
   getFuture,
   getFutureSession,
-  getFutureSessionGraph,
+  getFutureSessionFutureView,
   saveFuture,
   type FutureCard,
   type FutureDetailResponse,
   type FutureMapNode,
   type FutureSessionState,
+  type FutureSwarmAction,
+  type FutureViewState,
+  type SwarmState,
 } from "@/services/futureSessions";
 import { LiveFuturePathGraph } from "@/components/LiveFuturePathGraph";
 import {
@@ -152,6 +155,35 @@ const formatMatchingNote = (matchingMeta: MatchingMeta | null) => {
   }
 
   return "Using your best matches while search finishes loading.";
+};
+
+const graphPreviewSignature = (graphBuild: FutureViewState["graph_build"]) =>
+  JSON.stringify({
+    nodes: [...graphBuild.preview_nodes]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((node) => [node.id, node.type, node.label, node.summary]),
+    edges: [...graphBuild.preview_edges]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((edge) => [edge.id, edge.source, edge.target, edge.label]),
+  });
+
+const stabilizeGraphBuild = (
+  previousGraphBuild: FutureViewState["graph_build"] | null,
+  nextGraphBuild: FutureViewState["graph_build"],
+): FutureViewState["graph_build"] => {
+  if (!previousGraphBuild) {
+    return nextGraphBuild;
+  }
+
+  if (graphPreviewSignature(previousGraphBuild) !== graphPreviewSignature(nextGraphBuild)) {
+    return nextGraphBuild;
+  }
+
+  return {
+    ...nextGraphBuild,
+    preview_nodes: previousGraphBuild.preview_nodes,
+    preview_edges: previousGraphBuild.preview_edges,
+  };
 };
 
 const readFutureSessionStorage = () => {
@@ -527,7 +559,94 @@ const formatGraphEventTime = (value: string | null) => {
   }).format(parsed);
 };
 
-const GraphPreviewCanvas = ({
+const formatActionType = (value: string) =>
+  value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const describeSwarmAction = (action: FutureSwarmAction) => {
+  const content =
+    typeof action.action_args.content === "string"
+      ? action.action_args.content
+      : typeof action.action_args.text === "string"
+        ? action.action_args.text
+        : typeof action.action_args.post_content === "string"
+          ? action.action_args.post_content
+          : null;
+
+  if (content && content.trim()) {
+    return compactText(content.trim(), 120);
+  }
+
+  if (action.result && action.result.trim()) {
+    return compactText(action.result.trim(), 120);
+  }
+
+  return `${action.agent_name} performed ${formatActionType(action.action_type).toLowerCase()}.`;
+};
+
+const getFutureBuildCopy = (
+  graphBuild: FutureSessionState["graph_build"],
+  swarm: SwarmState,
+) => {
+  if (graphBuild.status !== "ready") {
+    return {
+      title: "Building your stakeholder graph",
+      body:
+        "We’re mapping the people, thesis directions, companies, universities, and experts around your best matches.",
+    };
+  }
+
+  if (swarm.status === "queued" || swarm.status === "preparing") {
+    return {
+      title: "Preparing the agent world",
+      body:
+        "The graph is ready. MiroFish is now preparing the agents and the simulation that will animate your future path.",
+    };
+  }
+
+  if (swarm.status === "running") {
+    return {
+      title: "Your future path is running live",
+      body:
+        "The MiroFish swarm is now exploring how your strongest thesis directions could unfold across people, places, and organizations.",
+    };
+  }
+
+  if (swarm.status === "ready") {
+    return {
+      title: "Your future path is ready",
+      body:
+        "The stakeholder graph and live future path are both ready. You can keep exploring while the results stay grounded in the same MiroFish session.",
+    };
+  }
+
+  return {
+    title: "Your future view hit a problem",
+    body:
+      "Part of the future pipeline failed, but your thesis matches are still available and we’ll keep the rest of the experience usable.",
+  };
+};
+
+const getSwarmStatusCopy = (swarm: SwarmState) => {
+  if (swarm.status === "failed") {
+    return "The swarm hit a problem, but the rest of the future view can still stay usable.";
+  }
+
+  if (swarm.status === "ready") {
+    return "The simulation has finished its run and the latest swarm update is captured below.";
+  }
+
+  if (swarm.status === "running") {
+    return "The agents are actively exploring how this future path could unfold in the live run.";
+  }
+
+  return "The agents are being prepared around the graph before the live run starts.";
+};
+
+const FutureBuildStatusPanel = ({
   graphBuild,
 }: {
   graphBuild: FutureSessionState["graph_build"];
@@ -536,33 +655,23 @@ const GraphPreviewCanvas = ({
     ? graphBuild.events[graphBuild.events.length - 1]
     : {
         timestamp: null,
-        message: "Agent swarms are simulating likely thesis paths from your profile and previous inputs.",
+        message: "We’re still waiting for the first graph update from MiroFish.",
         stage_label: graphBuild.stage_label,
         status: graphBuild.status,
         progress: graphBuild.progress,
         error: graphBuild.error,
       };
-  const isLive = graphBuild.status === "preparing" || graphBuild.status === "queued";
-  const nodes = graphBuild.preview_nodes;
-  const edges = graphBuild.preview_edges;
 
   return (
-    <div className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
-      <div className="mb-5 flex items-center justify-end gap-3">
-        {isLive && (
-          <div className="flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-primary">
-            <LoaderCircle size={14} className="animate-spin" />
-            <span className="ds-caption">Live</span>
-          </div>
-        )}
-      </div>
-      <div className="mb-5 rounded-[1.35rem] border border-border bg-muted/30 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          {latestEvent.stage_label && (
-            <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
-              {latestEvent.stage_label}
-            </span>
-          )}
+    <section className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="ds-title-cards text-foreground">
+            {latestEvent.stage_label ?? "Stakeholder discovery"}
+          </p>
+          <p className="ds-small text-muted-foreground">Latest graph build update</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
           <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
             {graphBuild.status}
           </span>
@@ -570,24 +679,185 @@ const GraphPreviewCanvas = ({
             {graphBuild.progress}%
           </span>
         </div>
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-background">
-          <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${graphBuild.progress}%` }} />
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-          <span>Latest update</span>
-          <span>{formatGraphEventTime(latestEvent.timestamp)}</span>
-        </div>
-        <p className="mt-2 ds-small text-foreground">
-          {latestEvent.message ?? latestEvent.error ?? "Waiting for the next update..."}
+      </div>
+      <div className="mt-5 h-2 overflow-hidden rounded-full bg-muted/50">
+        <div
+          className="h-full rounded-full bg-primary transition-all duration-500"
+          style={{ width: `${graphBuild.progress}%` }}
+        />
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+        <span>Latest update</span>
+        <span>{formatGraphEventTime(latestEvent.timestamp)}</span>
+      </div>
+      <p className="mt-2 ds-small text-foreground">
+        {latestEvent.message ?? latestEvent.error ?? "Waiting for the next update..."}
+      </p>
+      {latestEvent.error && latestEvent.error !== latestEvent.message && (
+        <p className="mt-2 ds-caption text-destructive">
+          {latestEvent.error}
         </p>
-        {latestEvent.error && latestEvent.error !== latestEvent.message && (
-          <p className="mt-2 ds-caption text-destructive">
-            {latestEvent.error}
+      )}
+    </section>
+  );
+};
+
+const FutureSwarmStatusPanel = ({
+  swarm,
+}: {
+  swarm: SwarmState;
+}) => {
+  const latestEvent = swarm.events.length > 0
+    ? swarm.events[swarm.events.length - 1]
+    : {
+        timestamp: null,
+        message: getSwarmStatusCopy(swarm),
+        stage_label: swarm.stage_label,
+        status: swarm.status,
+        progress: swarm.progress,
+        error: swarm.error,
+      };
+
+  return (
+    <section className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="ds-title-cards text-foreground">
+            {latestEvent.stage_label ?? "Swarm updates"}
           </p>
+          <p className="ds-small text-muted-foreground">Latest simulation update</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
+            {swarm.status}
+          </span>
+          {swarm.runner_status && (
+            <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
+              {swarm.runner_status}
+            </span>
+          )}
+          <span className="rounded-full bg-primary/10 px-3 py-1 ds-caption text-primary">
+            {swarm.progress}%
+          </span>
+        </div>
+      </div>
+      <div className="mt-5 h-2 overflow-hidden rounded-full bg-muted/50">
+        <div
+          className="h-full rounded-full bg-primary transition-all duration-500"
+          style={{ width: `${swarm.progress}%` }}
+        />
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+        <span>Latest update</span>
+        <span>{formatGraphEventTime(latestEvent.timestamp)}</span>
+      </div>
+      <p className="mt-2 ds-small text-foreground">
+        {latestEvent.message ?? latestEvent.error ?? getSwarmStatusCopy(swarm)}
+      </p>
+      {latestEvent.error && latestEvent.error !== latestEvent.message && (
+        <p className="mt-2 ds-caption text-destructive">
+          {latestEvent.error}
+        </p>
+      )}
+    </section>
+  );
+};
+
+const GraphPreviewCanvas = ({
+  graphBuild,
+}: {
+  graphBuild: FutureSessionState["graph_build"];
+}) => {
+  const isLive = graphBuild.status === "preparing" || graphBuild.status === "queued";
+  const nodes = graphBuild.preview_nodes;
+  const edges = graphBuild.preview_edges;
+
+  return (
+    <div className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
+      <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <Network size={18} className="text-primary" />
+          <div>
+            <p className="ds-title-cards text-foreground">Stakeholder map</p>
+            <p className="ds-small text-muted-foreground">
+              Watch the people, institutions, and thesis paths settle into the same future view.
+            </p>
+          </div>
+        </div>
+        {isLive && (
+          <div className="flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-primary">
+            <LoaderCircle size={14} className="animate-spin" />
+            <span className="ds-caption">Live</span>
+          </div>
         )}
       </div>
       <LiveFuturePathGraph nodes={nodes} edges={edges} isLive={isLive} />
     </div>
+  );
+};
+
+const SwarmActionFeed = ({
+  swarm,
+}: {
+  swarm: SwarmState;
+}) => {
+  const latestAction = [...swarm.latest_actions].sort((left, right) => {
+    const leftTime = left.timestamp ? new Date(left.timestamp).getTime() : 0;
+    const rightTime = right.timestamp ? new Date(right.timestamp).getTime() : 0;
+    return rightTime - leftTime;
+  })[0] ?? null;
+
+  return (
+    <section className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="ds-title-cards text-foreground">Latest swarm action</p>
+          <p className="ds-small text-muted-foreground">
+            {latestAction
+              ? "Latest action from the live run"
+              : "Actions appear here once the live run starts."}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
+            {swarm.metrics.total_actions_count > 0
+              ? `${swarm.metrics.total_actions_count} so far`
+              : "Waiting"}
+          </span>
+          {latestAction && (
+            <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
+              {latestAction.platform ?? "platform"}
+            </span>
+          )}
+          {latestAction && (
+            <span className="rounded-full bg-primary/10 px-3 py-1 ds-caption text-primary">
+              {formatActionType(latestAction.action_type)}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="mt-5 border-t border-border/70 pt-4">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+          <span>Latest update</span>
+          <span>{formatGraphEventTime(latestAction?.timestamp ?? null)}</span>
+        </div>
+        {!latestAction ? (
+          <p className="mt-3 ds-small text-foreground">
+            {swarm.status === "running"
+              ? "The swarm is live, but the first visible action has not landed yet."
+              : "The swarm has not started acting yet."}
+          </p>
+        ) : (
+          <>
+            <p className="mt-3 ds-caption text-muted-foreground">
+              Round {latestAction.round_num}
+            </p>
+            <p className="mt-2 ds-label text-foreground">{latestAction.agent_name}</p>
+            <p className="mt-2 ds-small text-foreground">{describeSwarmAction(latestAction)}</p>
+          </>
+        )}
+      </div>
+    </section>
   );
 };
 
@@ -674,36 +944,61 @@ const DiscoverStage = ({
   </div>
 );
 
-const BuildGraphStage = ({
+const BuildFutureStage = ({
   futureSession,
   graphBuild,
+  swarm,
   matchingNote,
   onContinue,
 }: {
   futureSession: FutureSessionState;
   graphBuild: FutureSessionState["graph_build"];
+  swarm: SwarmState;
   matchingNote: string | null;
   onContinue: () => void;
 }) => {
   const canRevealTheses = futureSession.matched_futures.length > 0;
+  const copy = getFutureBuildCopy(graphBuild, swarm);
+  const hasFutureViewError = graphBuild.error || swarm.error;
 
   return (
     <div className="space-y-8">
       <div className="rounded-[2rem] border border-border bg-card px-6 py-8 shadow-sm">
         <p className="ds-caption uppercase tracking-[0.18em] text-muted-foreground">See your future</p>
-        <h2 className="ds-title-lg mt-3 text-foreground">Simulating your future with agent swarms</h2>
+        <h2 className="ds-title-lg mt-3 text-foreground">{copy.title}</h2>
         <p className="ds-body mt-3 max-w-3xl text-muted-foreground">
-          We are projecting likely thesis trajectories from your profile, saved context, and previous answers, then mapping the people and places that appear around your strongest matches.
+          {copy.body}
         </p>
         {matchingNote && <p className="mt-4 ds-caption text-muted-foreground">{matchingNote}</p>}
+        <div className="mt-5 flex flex-wrap gap-2">
+          <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
+            Graph: {graphBuild.status}
+          </span>
+          <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
+            Swarm: {swarm.status}
+          </span>
+          {swarm.runner_status && (
+            <span className="rounded-full bg-primary/10 px-3 py-1 ds-caption text-primary">
+              Runner: {swarm.runner_status}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-8 xl:grid-cols-3">
+        <FutureBuildStatusPanel graphBuild={graphBuild} />
+        <FutureSwarmStatusPanel swarm={swarm} />
+        <SwarmActionFeed swarm={swarm} />
       </div>
 
       <GraphPreviewCanvas graphBuild={graphBuild} />
 
-      {graphBuild.error && (
+      {hasFutureViewError && (
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-4">
           <p className="ds-label text-destructive">Future build failed</p>
-          <p className="ds-small mt-2 whitespace-pre-line text-destructive">{graphBuild.error}</p>
+          <p className="ds-small mt-2 whitespace-pre-line text-destructive">
+            {graphBuild.error ?? swarm.error}
+          </p>
         </div>
       )}
 
@@ -711,13 +1006,13 @@ const BuildGraphStage = ({
         <section className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="ds-title-cards text-foreground">Your thesis matches are already ready</p>
+              <p className="ds-title-cards text-foreground">Your thesis paths are already ready</p>
               <p className="ds-small text-muted-foreground">
-                Open them now while the simulation keeps enriching your network in the background.
+                Open the thesis list now. The future view can keep enriching itself in the background.
               </p>
             </div>
             <Button onClick={onContinue} className="rounded-full gap-2">
-              Open thesis matches <ArrowRight size={16} />
+              Open thesis paths <ArrowRight size={16} />
             </Button>
           </div>
         </section>
@@ -728,12 +1023,14 @@ const BuildGraphStage = ({
 
 const ExploreStage = ({
   futureSession,
+  futureView,
   activeFutureId,
   onOpenFuture,
   generatedExpanded,
   onToggleGenerated,
 }: {
   futureSession: FutureSessionState;
+  futureView: FutureViewState | null;
   activeFutureId: string | null;
   onOpenFuture: (futureId: string) => void;
   generatedExpanded: boolean;
@@ -742,6 +1039,10 @@ const ExploreStage = ({
   const savedFutures = futureSession.futures.filter((future) =>
     futureSession.saved_future_ids.includes(future.future_id),
   );
+  const graphBuild = futureView?.graph_build ?? futureSession.graph_build;
+  const swarm = futureView?.swarm ?? futureSession.swarm;
+  const isFutureViewUpdating =
+    graphBuild.status !== "ready" || (swarm.status !== "ready" && swarm.status !== "failed");
 
   return (
     <div className="space-y-8">
@@ -751,10 +1052,10 @@ const ExploreStage = ({
         <p className="ds-body mt-3 max-w-3xl text-muted-foreground">
           Start with your best matches. More ideas are below.
         </p>
-        {futureSession.graph_build.status !== "ready" && (
+        {isFutureViewUpdating && (
           <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-primary">
             <LoaderCircle size={14} className="animate-spin" />
-            <span className="ds-caption">Path still updating</span>
+            <span className="ds-caption">Future view still updating</span>
           </div>
         )}
       </div>
@@ -1603,7 +1904,7 @@ const ThesisFinder = () => {
   const [stage, setStage] = useState<StageId>("discover");
   const [discoverSummary, setDiscoverSummary] = useState<CompletedDiscoverPayload | null>(null);
   const [futureSession, setFutureSession] = useState<FutureSessionState | null>(null);
-  const [graphBuild, setGraphBuild] = useState<FutureSessionState["graph_build"] | null>(null);
+  const [futureView, setFutureView] = useState<FutureViewState | null>(null);
   const [activeFutureId, setActiveFutureId] = useState<string | null>(null);
   const [futureDetails, setFutureDetails] = useState<Record<string, FutureDetailResponse>>({});
   const [isRestoring, setIsRestoring] = useState(true);
@@ -1613,9 +1914,20 @@ const ThesisFinder = () => {
   const [chatInput, setChatInput] = useState("");
   const [screenError, setScreenError] = useState<string | null>(null);
 
-  const syncGraphBuild = useCallback((nextGraphBuild: FutureSessionState["graph_build"]) => {
-    setGraphBuild(nextGraphBuild);
-    setFutureSession((prev) => (prev ? { ...prev, graph_build: nextGraphBuild } : prev));
+  const syncFutureView = useCallback((nextFutureView: FutureViewState) => {
+    setFutureView((prev) => ({
+      graph_build: stabilizeGraphBuild(prev?.graph_build ?? null, nextFutureView.graph_build),
+      swarm: nextFutureView.swarm,
+    }));
+    setFutureSession((prev) =>
+      prev
+        ? {
+            ...prev,
+            graph_build: stabilizeGraphBuild(prev.graph_build, nextFutureView.graph_build),
+            swarm: nextFutureView.swarm,
+          }
+        : prev,
+    );
   }, []);
 
   useEffect(() => {
@@ -1629,7 +1941,10 @@ const ThesisFinder = () => {
       try {
         const restored = await getFutureSession(storedFutureSessionId);
         setFutureSession(restored);
-        setGraphBuild(restored.graph_build);
+        setFutureView({
+          graph_build: restored.graph_build,
+          swarm: restored.swarm,
+        });
         const restoredActiveFutureId =
           readActiveFutureStorage(storedFutureSessionId) ?? restored.selected_future_id ?? null;
         if (restoredActiveFutureId) {
@@ -1637,7 +1952,7 @@ const ThesisFinder = () => {
           setFutureDetails({ [restoredActiveFutureId]: restoredDetail });
           setActiveFutureId(restoredActiveFutureId);
           setStage("detail");
-        } else if (restored.graph_build.status === "ready") {
+        } else if (restored.graph_build.status === "ready" && restored.swarm.status === "ready") {
           setStage("explore");
         } else {
           setStage("build");
@@ -1658,18 +1973,24 @@ const ThesisFinder = () => {
       return;
     }
 
-    const currentGraphBuild = graphBuild ?? futureSession.graph_build;
-    if (currentGraphBuild.status === "ready" || currentGraphBuild.status === "failed") {
+    const currentFutureView = futureView ?? {
+      graph_build: futureSession.graph_build,
+      swarm: futureSession.swarm,
+    };
+    const isFutureViewSettled =
+      (currentFutureView.graph_build.status === "ready" || currentFutureView.graph_build.status === "failed") &&
+      (currentFutureView.swarm.status === "ready" || currentFutureView.swarm.status === "failed");
+    if (isFutureViewSettled) {
       return;
     }
 
     let cancelled = false;
 
-    const pollGraph = async () => {
+    const pollFutureView = async () => {
       try {
-        const nextGraphBuild = await getFutureSessionGraph(futureSession.future_session_id);
+        const nextFutureView = await getFutureSessionFutureView(futureSession.future_session_id);
         if (!cancelled) {
-          syncGraphBuild(nextGraphBuild);
+          syncFutureView(nextFutureView);
         }
       } catch (error) {
         if (!cancelled) {
@@ -1678,16 +1999,16 @@ const ThesisFinder = () => {
       }
     };
 
-    void pollGraph();
+    void pollFutureView();
     const interval = window.setInterval(() => {
-      void pollGraph();
+      void pollFutureView();
     }, 3500);
 
     return () => {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [futureSession, graphBuild, stage, syncGraphBuild]);
+  }, [futureSession, futureView, stage, syncFutureView]);
 
   const activeFuture = useMemo(() => {
     if (!futureSession || !activeFutureId) {
@@ -1753,7 +2074,10 @@ const ThesisFinder = () => {
       writeFutureSessionStorage(created.future_session_id);
       writeActiveFutureStorage(created.future_session_id, created.selected_future_id ?? null);
       setFutureSession(created);
-      setGraphBuild(created.graph_build);
+      setFutureView({
+        graph_build: created.graph_build,
+        swarm: created.swarm,
+      });
       setIsGeneratedExpanded(false);
       startTransition(() => {
         setStage("build");
@@ -1908,17 +2232,26 @@ const ThesisFinder = () => {
   }, [chatInput, handleSendPrompt]);
 
   const activeDetail = activeFutureId ? futureDetails[activeFutureId] ?? null : null;
-  const currentGraphBuild = graphBuild ?? futureSession?.graph_build ?? null;
+  const currentFutureView = futureView ?? (
+    futureSession
+      ? {
+          graph_build: futureSession.graph_build,
+          swarm: futureSession.swarm,
+        }
+      : null
+  );
+  const currentGraphBuild = currentFutureView?.graph_build ?? null;
+  const currentSwarm = currentFutureView?.swarm ?? null;
   const matchingNote = formatMatchingNote(discoverSummary?.matchingMeta ?? null);
   const currentStageIndex = stages.findIndex((item) => item.id === stage);
   const reachableStages = useMemo(
     () => ({
       discover: true,
-      build: Boolean(futureSession && currentGraphBuild),
+      build: Boolean(futureSession && currentGraphBuild && currentSwarm),
       explore: Boolean(futureSession),
       detail: Boolean(futureSession && activeFuture),
     }),
-    [activeFuture, currentGraphBuild, futureSession],
+    [activeFuture, currentGraphBuild, currentSwarm, futureSession],
   );
 
   const handleStageNavigation = useCallback(
@@ -2001,10 +2334,11 @@ const ThesisFinder = () => {
               />
             )}
 
-            {stage === "build" && futureSession && currentGraphBuild && (
-              <BuildGraphStage
+            {stage === "build" && futureSession && currentGraphBuild && currentSwarm && (
+              <BuildFutureStage
                 futureSession={futureSession}
                 graphBuild={currentGraphBuild}
+                swarm={currentSwarm}
                 matchingNote={matchingNote}
                 onContinue={handleContinueToExplore}
               />
@@ -2013,6 +2347,7 @@ const ThesisFinder = () => {
             {stage === "explore" && futureSession && (
               <ExploreStage
                 futureSession={futureSession}
+                futureView={currentFutureView}
                 activeFutureId={activeFutureId}
                 onOpenFuture={handleOpenFuture}
                 generatedExpanded={isGeneratedExpanded}

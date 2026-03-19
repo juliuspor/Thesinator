@@ -72,6 +72,8 @@ type FutureCard = {
     experts: EntitySummary[];
     fields: string[];
   };
+  saved?: boolean;
+  simulation_status?: "queued" | "preparing" | "ready" | "failed";
 };
 
 type FutureDetail = {
@@ -143,6 +145,42 @@ type GraphBuildState = {
   events: GraphBuildEvent[];
 };
 
+type SwarmStatus = "queued" | "preparing" | "running" | "ready" | "failed";
+
+type SwarmAction = {
+  round_num: number;
+  timestamp: string | null;
+  platform: string | null;
+  agent_id: number;
+  agent_name: string;
+  action_type: string;
+  action_args: Record<string, unknown>;
+  result: string | null;
+  success: boolean;
+};
+
+type SwarmState = {
+  status: SwarmStatus;
+  stage_label: string | null;
+  progress: number;
+  simulation_id: string | null;
+  prepare_task_id: string | null;
+  runner_status: string | null;
+  latest_actions: SwarmAction[];
+  events: GraphBuildEvent[];
+  error: string | null;
+  metrics: {
+    twitter_actions_count: number;
+    reddit_actions_count: number;
+    total_actions_count: number;
+  };
+};
+
+type FutureViewState = {
+  graph_build: GraphBuildState;
+  swarm: SwarmState;
+};
+
 type SessionContext = {
   sessionId: string;
   snapshot: ContextSnapshot;
@@ -173,6 +211,9 @@ const FIXED_SCENARIO_PROMPT =
 const FIXED_GRAPH_PROMPT =
   "Build a stakeholder-first thesis graph for this student's thesis journey. Show how the student, thesis directions, companies, universities, supervisors, experts, and nearby organizations connect as the path becomes real.";
 
+const FIXED_SWARM_PROMPT =
+  "Simulate a thesis-to-career future around this student's top thesis directions. Let the student, supervisors, experts, universities, companies, and nearby organizations shape the outcome. Keep the run practical, grounded, and useful for a live student-facing future view.";
+
 const DEFAULT_SUGGESTED_PROMPTS = [
   "What surprised you most about this path?",
   "What would you do earlier if you could start again?",
@@ -190,6 +231,23 @@ const EMPTY_GRAPH_BUILD_STATE: GraphBuildState = {
   preview_nodes: [],
   preview_edges: [],
   events: [],
+};
+
+const EMPTY_SWARM_STATE: SwarmState = {
+  status: "queued",
+  stage_label: null,
+  progress: 0,
+  simulation_id: null,
+  prepare_task_id: null,
+  runner_status: null,
+  latest_actions: [],
+  events: [],
+  error: null,
+  metrics: {
+    twitter_actions_count: 0,
+    reddit_actions_count: 0,
+    total_actions_count: 0,
+  },
 };
 
 const LOCAL_MIROFISH_API_URL = "http://host.docker.internal:5001";
@@ -909,6 +967,28 @@ const composeGraphSeed = (context: SessionContext, cards: FutureCard[]) => {
   ].join("\n\n");
 };
 
+const composeSessionSwarmRequirement = (context: SessionContext, cards: FutureCard[]) =>
+  [
+    FIXED_SWARM_PROMPT,
+    "",
+    "Student snapshot:",
+    JSON.stringify(context.snapshot, null, 2),
+    "",
+    "Top thesis directions to simulate:",
+    JSON.stringify(
+      cards.slice(0, 3).map((card) => ({
+        thesis_title: card.thesis_title,
+        future_headline: card.future_headline,
+        future_role: card.future_role,
+        future_organization: card.future_organization,
+        why_fit: card.why_fit,
+        fields: card.grounding.fields,
+      })),
+      null,
+      2,
+    ),
+  ].join("\n");
+
 const graphStatusFromValue = (value: unknown): GraphBuildStatus => {
   if (value === "ready" || value === "failed" || value === "preparing" || value === "queued") {
     return value;
@@ -1013,6 +1093,115 @@ const getStoredGraphState = (row: Record<string, unknown>): GraphBuildState =>
     task_id: row.graph_task_id,
     graph_id: row.graph_id,
     error: row.graph_error,
+  });
+
+const swarmStatusFromValue = (value: unknown): SwarmStatus => {
+  if (value === "queued" || value === "preparing" || value === "running" || value === "ready" || value === "failed") {
+    return value;
+  }
+
+  if (value === "completed" || value === "stopped" || value === "paused") {
+    return "ready";
+  }
+
+  if (value === "processing" || value === "pending" || value === "starting") {
+    return "preparing";
+  }
+
+  return "queued";
+};
+
+const normalizeSwarmAction = (value: unknown): SwarmAction | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const source = value as Record<string, unknown>;
+  return {
+    round_num:
+      typeof source.round_num === "number" && Number.isFinite(source.round_num)
+        ? Math.round(source.round_num)
+        : 0,
+    timestamp: trimString(source.timestamp),
+    platform: trimString(source.platform),
+    agent_id:
+      typeof source.agent_id === "number" && Number.isFinite(source.agent_id)
+        ? Math.round(source.agent_id)
+        : 0,
+    agent_name: trimString(source.agent_name) ?? "Agent",
+    action_type: trimString(source.action_type) ?? "ACTION",
+    action_args: source.action_args && typeof source.action_args === "object" && !Array.isArray(source.action_args)
+      ? (source.action_args as Record<string, unknown>)
+      : {},
+    result: trimString(source.result),
+    success: source.success !== false,
+  };
+};
+
+const normalizeSwarmState = (
+  value: unknown,
+  overrides: Partial<SwarmState> = {},
+): SwarmState => {
+  const source =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+
+  const latestActions =
+    "latest_actions" in overrides
+      ? overrides.latest_actions ?? []
+      : Array.isArray(source.latest_actions)
+        ? source.latest_actions.map(normalizeSwarmAction).filter((item): item is SwarmAction => Boolean(item))
+        : [];
+
+  const events =
+    "events" in overrides
+      ? overrides.events ?? []
+      : normalizeGraphEvents(source.events);
+
+  const metricsSource =
+    "metrics" in overrides
+      ? overrides.metrics ?? EMPTY_SWARM_STATE.metrics
+      : source.metrics && typeof source.metrics === "object" && !Array.isArray(source.metrics)
+        ? (source.metrics as Record<string, unknown>)
+        : {};
+
+  return {
+    status: swarmStatusFromValue(overrides.status ?? source.status ?? source.runner_status),
+    stage_label: trimString(overrides.stage_label ?? source.stage_label) ?? null,
+    progress: clampProgress(overrides.progress ?? source.progress),
+    simulation_id: trimString(overrides.simulation_id ?? source.simulation_id) ?? null,
+    prepare_task_id: trimString(overrides.prepare_task_id ?? source.prepare_task_id) ?? null,
+    runner_status: trimString(overrides.runner_status ?? source.runner_status) ?? null,
+    latest_actions: latestActions,
+    events,
+    error: trimString(overrides.error ?? source.error) ?? null,
+    metrics: {
+      twitter_actions_count:
+        typeof metricsSource.twitter_actions_count === "number" && Number.isFinite(metricsSource.twitter_actions_count)
+          ? Math.round(metricsSource.twitter_actions_count)
+          : 0,
+      reddit_actions_count:
+        typeof metricsSource.reddit_actions_count === "number" && Number.isFinite(metricsSource.reddit_actions_count)
+          ? Math.round(metricsSource.reddit_actions_count)
+          : 0,
+      total_actions_count:
+        typeof metricsSource.total_actions_count === "number" && Number.isFinite(metricsSource.total_actions_count)
+          ? Math.round(metricsSource.total_actions_count)
+          : 0,
+    },
+  };
+};
+
+const getStoredSwarmState = (row: Record<string, unknown>): SwarmState =>
+  normalizeSwarmState({
+    status: row.swarm_status,
+    stage_label: row.swarm_stage_label,
+    progress: row.swarm_progress,
+    simulation_id: row.swarm_simulation_id,
+    prepare_task_id: row.swarm_prepare_task_id,
+    runner_status: row.swarm_runner_status,
+    error: row.swarm_error,
   });
 
 const callMiroFishJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
@@ -1153,8 +1342,72 @@ const syncGraphBuildState = async (
   return nextState;
 };
 
-const hydrateFutureRow = (row: Record<string, unknown>) => {
+const persistSwarmState = async (
+  adminClient: ReturnType<typeof createClient>,
+  futureSessionId: string,
+  swarmState: SwarmState,
+) => {
+  await adminClient
+    .from("future_sessions")
+    .update({
+      swarm_status: swarmState.status,
+      swarm_stage_label: swarmState.stage_label,
+      swarm_progress: swarmState.progress,
+      swarm_simulation_id: swarmState.simulation_id,
+      swarm_prepare_task_id: swarmState.prepare_task_id,
+      swarm_runner_status: swarmState.runner_status,
+      swarm_error: swarmState.error,
+    })
+    .eq("id", futureSessionId);
+};
+
+const fetchSwarmState = async (simulationId: string, prepareTaskId: string | null) => {
+  const search = new URLSearchParams();
+  if (prepareTaskId) {
+    search.set("prepare_task_id", prepareTaskId);
+  }
+
+  const response = await callMiroFishJson<Record<string, unknown>>(
+    `/api/studyond/swarm/status/${simulationId}${search.toString() ? `?${search.toString()}` : ""}`,
+  );
+  const payload =
+    response && typeof response === "object" && response.data && typeof response.data === "object"
+      ? (response.data as Record<string, unknown>)
+      : response;
+
+  return normalizeSwarmState(payload, {
+    simulation_id: simulationId,
+    prepare_task_id: prepareTaskId,
+  });
+};
+
+const syncSwarmState = async (
+  adminClient: ReturnType<typeof createClient>,
+  futureSessionId: string,
+  storedState: SwarmState,
+) => {
+  if (!storedState.simulation_id) {
+    return storedState;
+  }
+
+  let nextState: SwarmState;
+  try {
+    nextState = await fetchSwarmState(storedState.simulation_id, storedState.prepare_task_id);
+  } catch (error) {
+    nextState = normalizeSwarmState(storedState, {
+      status: "failed",
+      stage_label: "Swarm unavailable",
+      error: error instanceof Error ? error.message : "Could not reach the MiroFish swarm endpoint.",
+    });
+  }
+
+  await persistSwarmState(adminClient, futureSessionId, nextState);
+  return nextState;
+};
+
+const hydrateFutureRow = (row: Record<string, unknown>): FutureCard => {
   const card = (row.card ?? {}) as FutureCard;
+  const simulationStatus = trimString(row.deep_status);
 
   return {
     ...card,
@@ -1162,8 +1415,11 @@ const hydrateFutureRow = (row: Record<string, unknown>) => {
     rank: typeof row.rank === "number" ? row.rank : card.rank,
     source: row.source === "generated" ? "generated" : "matched",
     saved: row.saved === true,
-    simulation_status: trimString(row.deep_status) ?? "queued",
-  };
+    simulation_status:
+      simulationStatus === "preparing" || simulationStatus === "ready" || simulationStatus === "failed"
+        ? simulationStatus
+        : "queued",
+  } satisfies FutureCard;
 };
 
 const loadTopicBundles = async (adminClient: ReturnType<typeof createClient>, topicIds: string[]) => {
@@ -1215,7 +1471,7 @@ const loadTopicBundles = async (adminClient: ReturnType<typeof createClient>, to
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ]);
 
-  const companyMap = new Map(
+  const companyMap = new Map<string, EntitySummary>(
     (companies ?? []).map((company) => [
       company.id,
       {
@@ -1227,7 +1483,7 @@ const loadTopicBundles = async (adminClient: ReturnType<typeof createClient>, to
       } satisfies EntitySummary,
     ]),
   );
-  const universityMap = new Map(
+  const universityMap = new Map<string, EntitySummary>(
     (universities ?? []).map((university) => [
       university.id,
       {
@@ -1239,7 +1495,7 @@ const loadTopicBundles = async (adminClient: ReturnType<typeof createClient>, to
     ]),
   );
   const fieldMap = new Map((fields ?? []).map((field) => [field.id, field.name]));
-  const supervisorMap = new Map(
+  const supervisorMap = new Map<string, EntitySummary>(
     (supervisors ?? []).map((supervisor) => [
       supervisor.id,
       {
@@ -1250,7 +1506,7 @@ const loadTopicBundles = async (adminClient: ReturnType<typeof createClient>, to
       } satisfies EntitySummary,
     ]),
   );
-  const expertMap = new Map(
+  const expertMap = new Map<string, EntitySummary>(
     (experts ?? []).map((expert) => [
       expert.id,
       {
@@ -1264,6 +1520,8 @@ const loadTopicBundles = async (adminClient: ReturnType<typeof createClient>, to
 
   const bundleMap = new Map<string, TopicBundle>();
   for (const topic of topics ?? []) {
+    const companyId = trimString(topic.company_id);
+    const universityId = trimString(topic.university_id);
     const fieldsForTopic = (topicFields ?? [])
       .filter((row) => row.topic_id === topic.id)
       .map((row) => fieldMap.get(row.field_id))
@@ -1288,8 +1546,8 @@ const loadTopicBundles = async (adminClient: ReturnType<typeof createClient>, to
       paid: typeof topic.paid === "boolean" ? topic.paid : null,
       ndaRequired: typeof topic.nda_required === "boolean" ? topic.nda_required : null,
       publishAllowed: typeof topic.publish_allowed === "boolean" ? topic.publish_allowed : null,
-      company: topic.company_id ? companyMap.get(topic.company_id) ?? null : null,
-      university: topic.university_id ? universityMap.get(topic.university_id) ?? null : null,
+      company: companyId ? companyMap.get(companyId) ?? null : null,
+      university: universityId ? universityMap.get(universityId) ?? null : null,
       supervisors: supervisorsForTopic,
       experts: expertsForTopic,
       fields: fieldsForTopic,
@@ -1464,15 +1722,227 @@ const ensureGraphBuildStarted = async (
   return nextState;
 };
 
+const ensureSwarmStarted = async (
+  adminClient: ReturnType<typeof createClient>,
+  input: {
+    futureSessionId: string;
+    thesinatorSessionId: string;
+    graphBuildState: GraphBuildState;
+  },
+) => {
+  const { data: sessionRow, error: sessionError } = await adminClient
+    .from("future_sessions")
+    .select(
+      "id, swarm_status, swarm_stage_label, swarm_progress, swarm_simulation_id, swarm_prepare_task_id, swarm_runner_status, swarm_error",
+    )
+    .eq("id", input.futureSessionId)
+    .maybeSingle();
+
+  if (sessionError) {
+    throw new Error(sessionError.message);
+  }
+
+  if (!sessionRow) {
+    throw new Error(`Future session not found: ${input.futureSessionId}`);
+  }
+
+  const storedState = getStoredSwarmState(sessionRow as Record<string, unknown>);
+  if (storedState.simulation_id || storedState.prepare_task_id) {
+    return storedState;
+  }
+
+  if (input.graphBuildState.status !== "ready" || !input.graphBuildState.graph_id || !input.graphBuildState.mirofish_project_id) {
+    const waitingState = normalizeSwarmState(EMPTY_SWARM_STATE, {
+      status: input.graphBuildState.status === "failed" ? "failed" : "queued",
+      stage_label: input.graphBuildState.status === "failed" ? "Graph build failed" : "Waiting for stakeholder graph",
+      error: input.graphBuildState.status === "failed" ? input.graphBuildState.error : null,
+    });
+    await persistSwarmState(adminClient, input.futureSessionId, waitingState);
+    return waitingState;
+  }
+
+  const context = await loadSessionContext(adminClient, input.thesinatorSessionId);
+  const futures = await loadSessionCards(adminClient, input.futureSessionId);
+  const matchedFutures = futures.filter((future) => future.source === "matched").slice(0, 3);
+
+  let nextState: SwarmState;
+  try {
+    const response = await callMiroFishJson<Record<string, unknown>>("/api/studyond/swarm/start", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: input.graphBuildState.mirofish_project_id,
+        graph_id: input.graphBuildState.graph_id,
+        simulation_requirement: composeSessionSwarmRequirement(context, matchedFutures),
+        platform: "parallel",
+        max_rounds: 8,
+        enable_graph_memory_update: true,
+      }),
+    });
+
+    const payload =
+      response && typeof response === "object" && response.data && typeof response.data === "object"
+        ? (response.data as Record<string, unknown>)
+        : response;
+
+    nextState = normalizeSwarmState(payload, {
+      status: "preparing",
+      simulation_id: trimString(payload.simulation_id),
+      prepare_task_id: trimString(payload.prepare_task_id),
+    });
+  } catch (error) {
+    nextState = normalizeSwarmState(EMPTY_SWARM_STATE, {
+      status: "failed",
+      stage_label: "MiroFish swarm start failed",
+      error: error instanceof Error ? error.message : "MiroFish swarm adapter is not reachable.",
+    });
+  }
+
+  await persistSwarmState(adminClient, input.futureSessionId, nextState);
+  return nextState;
+};
+
+const assembleFutureView = async (
+  adminClient: ReturnType<typeof createClient>,
+  futureSessionId: string,
+  overrides: Partial<FutureViewState> = {},
+): Promise<FutureViewState> => {
+  const { data: sessionRow, error: sessionError } = await adminClient
+    .from("future_sessions")
+    .select(
+      `
+        id,
+        graph_status,
+        graph_stage_label,
+        graph_progress,
+        mirofish_project_id,
+        graph_task_id,
+        graph_id,
+        graph_error,
+        swarm_status,
+        swarm_stage_label,
+        swarm_progress,
+        swarm_simulation_id,
+        swarm_prepare_task_id,
+        swarm_runner_status,
+        swarm_error
+      `,
+    )
+    .eq("id", futureSessionId)
+    .maybeSingle();
+
+  if (sessionError) {
+    throw new Error(sessionError.message);
+  }
+
+  if (!sessionRow) {
+    throw new Error(`Future session not found: ${futureSessionId}`);
+  }
+
+  return {
+    graph_build: overrides.graph_build ?? getStoredGraphState(sessionRow as Record<string, unknown>),
+    swarm: overrides.swarm ?? getStoredSwarmState(sessionRow as Record<string, unknown>),
+  };
+};
+
+const resolveFutureViewState = async (
+  adminClient: ReturnType<typeof createClient>,
+  input: {
+    futureSessionId: string;
+    thesinatorSessionId: string;
+    graphState?: GraphBuildState;
+    swarmState?: SwarmState;
+  },
+): Promise<FutureViewState> => {
+  let graphState = input.graphState ?? EMPTY_GRAPH_BUILD_STATE;
+  let swarmState = input.swarmState ?? EMPTY_SWARM_STATE;
+
+  if (!graphState.task_id && !graphState.graph_id) {
+    graphState = await ensureGraphBuildStarted(adminClient, {
+      futureSessionId: input.futureSessionId,
+      thesinatorSessionId: input.thesinatorSessionId,
+    });
+  }
+
+  if (graphState.task_id) {
+    graphState = await syncGraphBuildState(adminClient, input.futureSessionId, graphState);
+  } else if (graphState.graph_id) {
+    try {
+      const previewState = await fetchGraphPreview(graphState.graph_id);
+      graphState = normalizeGraphState(graphState, {
+        preview_nodes: previewState.preview_nodes,
+        preview_edges: previewState.preview_edges,
+      });
+    } catch (error) {
+      graphState = normalizeGraphState(graphState, {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not fetch the latest graph preview from MiroFish.",
+      });
+    }
+  }
+
+  if (graphState.status === "ready") {
+    if (!swarmState.simulation_id && !swarmState.prepare_task_id) {
+      swarmState = await ensureSwarmStarted(adminClient, {
+        futureSessionId: input.futureSessionId,
+        thesinatorSessionId: input.thesinatorSessionId,
+        graphBuildState: graphState,
+      });
+    }
+
+    if (swarmState.simulation_id) {
+      swarmState = await syncSwarmState(adminClient, input.futureSessionId, swarmState);
+    }
+  } else if (graphState.status === "failed") {
+    swarmState = normalizeSwarmState(swarmState, {
+      status: "failed",
+      stage_label: "Graph build failed",
+      error: graphState.error ?? "Could not build the stakeholder graph.",
+    });
+    await persistSwarmState(adminClient, input.futureSessionId, swarmState);
+  } else {
+    swarmState = normalizeSwarmState(swarmState, {
+      status: "queued",
+      stage_label: "Waiting for stakeholder graph",
+      error: null,
+    });
+    await persistSwarmState(adminClient, input.futureSessionId, swarmState);
+  }
+
+  return {
+    graph_build: graphState,
+    swarm: swarmState,
+  };
+};
+
 const assembleSessionResponse = async (
   adminClient: ReturnType<typeof createClient>,
   futureSessionId: string,
   graphBuildOverride?: GraphBuildState,
+  swarmOverride?: SwarmState,
 ) => {
   const { data: futureSession, error: sessionError } = await adminClient
     .from("future_sessions")
     .select(
-      "id, selected_future_id, graph_status, graph_stage_label, graph_progress, mirofish_project_id, graph_task_id, graph_id, graph_error",
+      `
+        id,
+        selected_future_id,
+        graph_status,
+        graph_stage_label,
+        graph_progress,
+        mirofish_project_id,
+        graph_task_id,
+        graph_id,
+        graph_error,
+        swarm_status,
+        swarm_stage_label,
+        swarm_progress,
+        swarm_simulation_id,
+        swarm_prepare_task_id,
+        swarm_runner_status,
+        swarm_error
+      `,
     )
     .eq("id", futureSessionId)
     .maybeSingle();
@@ -1504,6 +1974,7 @@ const assembleSessionResponse = async (
     saved_future_ids: hydratedFutures.filter((future) => future.saved).map((future) => future.future_id),
     selected_future_id: trimString(futureSession.selected_future_id),
     graph_build: graphBuildOverride ?? getStoredGraphState(futureSession as Record<string, unknown>),
+    swarm: swarmOverride ?? getStoredSwarmState(futureSession as Record<string, unknown>),
   };
 };
 
@@ -1523,11 +1994,19 @@ const handleCreate = async (req: Request) => {
     .maybeSingle();
 
   if (existingSession?.id) {
-    const graphBuildState = await ensureGraphBuildStarted(adminClient, {
+    const futureView = await resolveFutureViewState(adminClient, {
       futureSessionId: existingSession.id,
       thesinatorSessionId,
     });
-    return json(200, await assembleSessionResponse(adminClient, existingSession.id, graphBuildState));
+    return json(
+      200,
+      await assembleSessionResponse(
+        adminClient,
+        existingSession.id,
+        futureView.graph_build,
+        futureView.swarm,
+      ),
+    );
   }
 
   const context = await loadSessionContext(adminClient, thesinatorSessionId);
@@ -1570,6 +2049,8 @@ const handleCreate = async (req: Request) => {
       status: "ready",
       graph_status: "queued",
       graph_progress: 0,
+      swarm_status: "queued",
+      swarm_progress: 0,
     })
     .select("id")
     .single();
@@ -1595,12 +2076,20 @@ const handleCreate = async (req: Request) => {
     throw new Error(insertError.message);
   }
 
-  const graphBuildState = await ensureGraphBuildStarted(adminClient, {
+  const futureView = await resolveFutureViewState(adminClient, {
     futureSessionId: createdSession.id,
     thesinatorSessionId,
   });
 
-  return json(200, await assembleSessionResponse(adminClient, createdSession.id, graphBuildState));
+  return json(
+    200,
+    await assembleSessionResponse(
+      adminClient,
+      createdSession.id,
+      futureView.graph_build,
+      futureView.swarm,
+    ),
+  );
 };
 
 const handleGetSession = async (req: Request, futureSessionId: string) => {
@@ -1608,31 +2097,24 @@ const handleGetSession = async (req: Request, futureSessionId: string) => {
   const { data: sessionRow, error: sessionError } = await adminClient
     .from("future_sessions")
     .select(
-      "id, graph_status, graph_stage_label, graph_progress, mirofish_project_id, graph_task_id, graph_id, graph_error",
-    )
-    .eq("id", futureSessionId)
-    .maybeSingle();
-
-  if (sessionError) {
-    throw new Error(sessionError.message);
-  }
-
-  const storedGraphState = sessionRow ? getStoredGraphState(sessionRow as Record<string, unknown>) : undefined;
-  const graphBuildState =
-    storedGraphState && storedGraphState.task_id
-      ? await syncGraphBuildState(adminClient, futureSessionId, storedGraphState)
-      : storedGraphState;
-
-  return json(200, await assembleSessionResponse(adminClient, futureSessionId, graphBuildState));
-};
-
-const handleGetGraph = async (req: Request, futureSessionId: string) => {
-  const { adminClient } = getClients();
-
-  const { data: sessionRow, error: sessionError } = await adminClient
-    .from("future_sessions")
-    .select(
-      "id, thesinator_session_id, graph_status, graph_stage_label, graph_progress, mirofish_project_id, graph_task_id, graph_id, graph_error",
+      `
+        id,
+        thesinator_session_id,
+        graph_status,
+        graph_stage_label,
+        graph_progress,
+        mirofish_project_id,
+        graph_task_id,
+        graph_id,
+        graph_error,
+        swarm_status,
+        swarm_stage_label,
+        swarm_progress,
+        swarm_simulation_id,
+        swarm_prepare_task_id,
+        swarm_runner_status,
+        swarm_error
+      `,
     )
     .eq("id", futureSessionId)
     .maybeSingle();
@@ -1645,41 +2127,75 @@ const handleGetGraph = async (req: Request, futureSessionId: string) => {
     return errorResponse(404, "Future session not found.");
   }
 
-  let graphState = getStoredGraphState(sessionRow as Record<string, unknown>);
-  if (!graphState.task_id && !graphState.graph_id) {
-    graphState = await ensureGraphBuildStarted(adminClient, {
+  const futureView = await resolveFutureViewState(adminClient, {
+    futureSessionId,
+    thesinatorSessionId: String(sessionRow.thesinator_session_id),
+    graphState: getStoredGraphState(sessionRow as Record<string, unknown>),
+    swarmState: getStoredSwarmState(sessionRow as Record<string, unknown>),
+  });
+
+  return json(
+    200,
+    await assembleSessionResponse(
+      adminClient,
       futureSessionId,
-      thesinatorSessionId: String(sessionRow.thesinator_session_id),
-    });
+      futureView.graph_build,
+      futureView.swarm,
+    ),
+  );
+};
+
+const handleGetFutureView = async (req: Request, futureSessionId: string) => {
+  const { adminClient } = getClients();
+
+  const { data: sessionRow, error: sessionError } = await adminClient
+    .from("future_sessions")
+    .select(
+      `
+        id,
+        thesinator_session_id,
+        graph_status,
+        graph_stage_label,
+        graph_progress,
+        mirofish_project_id,
+        graph_task_id,
+        graph_id,
+        graph_error,
+        swarm_status,
+        swarm_stage_label,
+        swarm_progress,
+        swarm_simulation_id,
+        swarm_prepare_task_id,
+        swarm_runner_status,
+        swarm_error
+      `,
+    )
+    .eq("id", futureSessionId)
+    .maybeSingle();
+
+  if (sessionError) {
+    throw new Error(sessionError.message);
   }
 
-  if (graphState.task_id) {
-    graphState = await syncGraphBuildState(adminClient, futureSessionId, graphState);
-  } else if (graphState.graph_id) {
-    try {
-      const previewState = await fetchGraphPreview(graphState.graph_id);
-      graphState = normalizeGraphState(graphState, {
-        preview_nodes: previewState.preview_nodes,
-        preview_edges: previewState.preview_edges,
-      });
-    } catch (error) {
-      graphState = normalizeGraphState(graphState, {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Could not fetch the latest graph preview from MiroFish.",
-      });
-    }
+  if (!sessionRow) {
+    return errorResponse(404, "Future session not found.");
   }
 
-  return json(200, graphState);
+  const futureView = await resolveFutureViewState(adminClient, {
+    futureSessionId,
+    thesinatorSessionId: String(sessionRow.thesinator_session_id),
+    graphState: getStoredGraphState(sessionRow as Record<string, unknown>),
+    swarmState: getStoredSwarmState(sessionRow as Record<string, unknown>),
+  });
+
+  return json(200, futureView);
 };
 
 const handleGetFuture = async (req: Request, futureSessionId: string, futureId: string) => {
   const { adminClient } = getClients();
   const { data: futureRow, error: futureError } = await adminClient
     .from("future_session_futures")
-    .select("id, source, rank, saved, deep_status, card, detail, map_nodes, suggested_prompts")
+    .select("id, source, rank, saved, deep_status, card, detail, map_nodes, suggested_prompts, seed_text")
     .eq("future_session_id", futureSessionId)
     .eq("id", futureId)
     .maybeSingle();
@@ -1692,6 +2208,127 @@ const handleGetFuture = async (req: Request, futureSessionId: string, futureId: 
     return errorResponse(404, "Future not found.");
   }
 
+  const futureCard = hydrateFutureRow(futureRow as Record<string, unknown>);
+  let futureDetail =
+    futureRow.detail && typeof futureRow.detail === "object" && !Array.isArray(futureRow.detail)
+      ? futureRow.detail
+      : null;
+  let mapNodes = Array.isArray(futureRow.map_nodes) ? futureRow.map_nodes : [];
+  let suggestedPrompts = normalizeSuggestedPrompts(futureRow.suggested_prompts);
+  let simulationStatus = trimString(futureRow.deep_status) ?? "queued";
+
+  if (!futureDetail) {
+    await adminClient
+      .from("future_session_futures")
+      .update({ deep_status: "preparing" })
+      .eq("future_session_id", futureSessionId)
+      .eq("id", futureId);
+
+    const { data: sessionRow, error: sessionError } = await adminClient
+      .from("future_sessions")
+      .select(
+        `
+          id,
+          thesinator_session_id,
+          graph_status,
+          graph_stage_label,
+          graph_progress,
+          mirofish_project_id,
+          graph_task_id,
+          graph_id,
+          graph_error,
+          swarm_status,
+          swarm_stage_label,
+          swarm_progress,
+          swarm_simulation_id,
+          swarm_prepare_task_id,
+          swarm_runner_status,
+          swarm_error
+        `,
+      )
+      .eq("id", futureSessionId)
+      .maybeSingle();
+
+    if (sessionError) {
+      throw new Error(sessionError.message);
+    }
+
+    if (sessionRow) {
+      const futureView = await resolveFutureViewState(adminClient, {
+        futureSessionId,
+        thesinatorSessionId: String(sessionRow.thesinator_session_id),
+        graphState: getStoredGraphState(sessionRow as Record<string, unknown>),
+        swarmState: getStoredSwarmState(sessionRow as Record<string, unknown>),
+      });
+
+      const swarmHighlights = futureView.swarm.latest_actions.slice(0, 8).map((action) => ({
+        platform: action.platform,
+        agent_name: action.agent_name,
+        action_type: action.action_type,
+        round_num: action.round_num,
+        action_args: action.action_args,
+        result: action.result,
+      }));
+
+      const storedSeedText = trimString(futureRow.seed_text);
+      const seedText = storedSeedText ?? composeSwarmSeed(
+        await loadSessionContext(adminClient, String(sessionRow.thesinator_session_id)),
+        futureCard,
+      );
+
+      try {
+        const response = await callMiroFishJson<Record<string, unknown>>("/api/studyond/futures/prepare", {
+          method: "POST",
+          body: JSON.stringify({
+            seed_text: seedText,
+            future_card: futureCard,
+            scenario_description: FIXED_SCENARIO_PROMPT,
+            swarm_highlights: swarmHighlights,
+          }),
+        });
+
+        const payload =
+          response && typeof response === "object" && response.data && typeof response.data === "object"
+            ? (response.data as Record<string, unknown>)
+            : response;
+
+        futureDetail =
+          payload.future_detail && typeof payload.future_detail === "object" && !Array.isArray(payload.future_detail)
+            ? payload.future_detail
+            : buildDefaultFutureDetail(futureCard);
+        suggestedPrompts = normalizeSuggestedPrompts(payload.suggested_prompts);
+        mapNodes = buildMapNodes(futureCard);
+        simulationStatus = "ready";
+
+        await adminClient
+          .from("future_session_futures")
+          .update({
+            detail: futureDetail,
+            map_nodes: mapNodes,
+            suggested_prompts: suggestedPrompts,
+            deep_status: "ready",
+            mirofish_simulation_id: futureView.swarm.simulation_id,
+          })
+          .eq("future_session_id", futureSessionId)
+          .eq("id", futureId);
+      } catch (error) {
+        futureDetail = buildDefaultFutureDetail(futureCard);
+        mapNodes = buildMapNodes(futureCard);
+        suggestedPrompts = DEFAULT_SUGGESTED_PROMPTS;
+        simulationStatus = "failed";
+
+        await adminClient
+          .from("future_session_futures")
+          .update({
+            deep_status: "failed",
+            mirofish_simulation_id: futureView.swarm.simulation_id,
+          })
+          .eq("future_session_id", futureSessionId)
+          .eq("id", futureId);
+      }
+    }
+  }
+
   const { data: messages } = await adminClient
     .from("future_session_messages")
     .select("role, content")
@@ -1699,14 +2336,11 @@ const handleGetFuture = async (req: Request, futureSessionId: string, futureId: 
     .order("created_at", { ascending: true });
 
   return json(200, {
-    future_card: hydrateFutureRow(futureRow as Record<string, unknown>),
-    future_detail:
-      futureRow.detail && typeof futureRow.detail === "object" && !Array.isArray(futureRow.detail)
-        ? futureRow.detail
-        : null,
-    simulation_status: trimString(futureRow.deep_status) ?? "queued",
-    map_nodes: Array.isArray(futureRow.map_nodes) ? futureRow.map_nodes : [],
-    suggested_prompts: normalizeSuggestedPrompts(futureRow.suggested_prompts),
+    future_card: futureCard,
+    future_detail: futureDetail,
+    simulation_status: simulationStatus,
+    map_nodes: mapNodes,
+    suggested_prompts: suggestedPrompts,
     chat_history: (messages ?? []).map((message) => ({
       role: message.role,
       content: message.content,
@@ -1835,8 +2469,12 @@ Deno.serve(async (req) => {
       return await handleGetSession(req, segments[0]);
     }
 
+    if (req.method === "GET" && segments.length === 2 && segments[1] === "future-view") {
+      return await handleGetFutureView(req, segments[0]);
+    }
+
     if (req.method === "GET" && segments.length === 2 && segments[1] === "graph") {
-      return await handleGetGraph(req, segments[0]);
+      return await handleGetFutureView(req, segments[0]);
     }
 
     if (segments.length === 4 && segments[1] === "futures") {
