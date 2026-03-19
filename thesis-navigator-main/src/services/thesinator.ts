@@ -33,6 +33,22 @@ export type StartThesinatorResponse = {
   is_complete: boolean;
 };
 
+export type TopTopicResult = {
+  rank: number;
+  topic_id: string;
+  title: string;
+  final_score: number;
+  vector_score: number;
+  structured_score: number;
+  reason: Record<string, unknown> | null;
+};
+
+export type MatchingMeta = {
+  used_vector: boolean;
+  relaxation_stage: number;
+  total_candidates: number;
+};
+
 export type TurnThesinatorResponse = {
   session_id: string;
   client_token: string | null;
@@ -42,6 +58,8 @@ export type TurnThesinatorResponse = {
   question_index: number;
   is_complete: boolean;
   context_snapshot?: ContextSnapshot;
+  top_topics?: TopTopicResult[];
+  matching_meta?: MatchingMeta;
 };
 
 const requireSupabase = () => {
@@ -103,4 +121,87 @@ export const sendThesinatorTurn = async (payload: {
   }
 
   return data;
+};
+
+const normalizeTopTopics = (data: unknown): TopTopicResult[] => {
+  if (!Array.isArray(data)) {
+    return [];
+  }
+
+  return data.filter((row): row is TopTopicResult => {
+    if (!row || typeof row !== "object") {
+      return false;
+    }
+    const candidate = row as Record<string, unknown>;
+    return (
+      typeof candidate.rank === "number" &&
+      typeof candidate.topic_id === "string" &&
+      typeof candidate.title === "string" &&
+      typeof candidate.final_score === "number" &&
+      typeof candidate.vector_score === "number" &&
+      typeof candidate.structured_score === "number"
+    );
+  });
+};
+
+const normalizeMatchingMeta = (value: unknown): MatchingMeta => {
+  if (!value || typeof value !== "object") {
+    return {
+      used_vector: false,
+      relaxation_stage: 0,
+      total_candidates: 0,
+    };
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return {
+    used_vector: candidate.used_vector === true,
+    relaxation_stage:
+      typeof candidate.relaxation_stage === "number" && Number.isFinite(candidate.relaxation_stage)
+        ? Math.round(candidate.relaxation_stage)
+        : 0,
+    total_candidates:
+      typeof candidate.total_candidates === "number" && Number.isFinite(candidate.total_candidates)
+        ? Math.round(candidate.total_candidates)
+        : 0,
+  };
+};
+
+export const fetchThesinatorTopTopics = async (payload: {
+  sessionId: string;
+  clientToken?: string | null;
+  limit?: number;
+}): Promise<{ top_topics: TopTopicResult[]; matching_meta: MatchingMeta }> => {
+  const client = requireSupabase();
+  const { data, error } = await client.functions.invoke<{
+    top_topics?: unknown;
+    matching_meta?: unknown;
+  }>("thesinator-chat", {
+    body: {
+      action: "top_topics",
+      session_id: payload.sessionId,
+      client_token: payload.clientToken ?? null,
+      limit: payload.limit ?? 5,
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || "Failed to fetch top thesis topics.");
+  }
+
+  if (!data) {
+    return {
+      top_topics: [],
+      matching_meta: {
+        used_vector: false,
+        relaxation_stage: 0,
+        total_candidates: 0,
+      },
+    };
+  }
+
+  return {
+    top_topics: normalizeTopTopics(data.top_topics),
+    matching_meta: normalizeMatchingMeta(data.matching_meta),
+  };
 };

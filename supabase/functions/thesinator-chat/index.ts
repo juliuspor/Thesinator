@@ -7,7 +7,7 @@ import {
   isInputMode,
   mergeContextSnapshot,
 } from "./_shared.ts";
-import type { InputMode, ThesinatorQuestion } from "./_shared.ts";
+import type { ContextSnapshot, InputMode, ThesinatorQuestion } from "./_shared.ts";
 
 type StartRequest = {
   action: "start";
@@ -20,6 +20,13 @@ type TurnRequest = {
   user_answer: string;
   input_mode: InputMode;
   client_token?: string | null;
+};
+
+type TopTopicsRequest = {
+  action: "top_topics";
+  session_id: string;
+  client_token?: string | null;
+  limit?: number;
 };
 
 type AnthropicTurnResult = {
@@ -36,6 +43,33 @@ type SessionRow = {
   status: string;
   current_question_index: number;
   context_snapshot: unknown;
+};
+
+type TopTopicRow = {
+  rank: number;
+  topic_id: string;
+  title: string;
+  final_score: number;
+  vector_score: number;
+  structured_score: number;
+  reason: Record<string, unknown> | null;
+};
+
+type MatchingMeta = {
+  used_vector: boolean;
+  relaxation_stage: number;
+  total_candidates: number;
+};
+
+type TopTopicComputation = {
+  topTopics: TopTopicRow[];
+  matchingMeta: MatchingMeta;
+};
+
+type TopicEmbeddingRow = {
+  id: string;
+  title: string;
+  search_document: string | null;
 };
 
 const corsHeaders = {
@@ -281,6 +315,304 @@ const synthesizeWithElevenLabs = async (text: string): Promise<string | null> =>
   return arrayBufferToBase64(buffer);
 };
 
+const toPositiveInteger = (value: unknown, fallback: number, max: number): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.min(Math.round(value), max));
+};
+
+const normalizeLimit = (value: unknown): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 5;
+  }
+
+  return Math.max(1, Math.min(Math.round(value), 20));
+};
+
+const chunk = <T>(input: T[], size: number): T[][] => {
+  const chunks: T[][] = [];
+  for (let index = 0; index < input.length; index += size) {
+    chunks.push(input.slice(index, index + size));
+  }
+  return chunks;
+};
+
+const callOpenAIEmbeddings = async (inputs: string[]): Promise<number[][] | null> => {
+  const apiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!apiKey || inputs.length === 0) {
+    return null;
+  }
+
+  const model = Deno.env.get("OPENAI_EMBEDDING_MODEL") ?? "text-embedding-3-small";
+  const normalizedInputs = inputs.map((input) => {
+    const trimmed = input.trim();
+    return trimmed.length > 0 ? trimmed : "n/a";
+  });
+
+  const response = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      input: normalizedInputs,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`OpenAI embeddings API failed (${response.status}): ${body}`);
+  }
+
+  const payload = await response.json();
+  if (!Array.isArray(payload.data)) {
+    throw new Error("OpenAI embeddings response did not include data.");
+  }
+
+  const vectors: number[][] = [];
+  for (const row of payload.data as Array<Record<string, unknown>>) {
+    const embedding = row.embedding;
+    if (!Array.isArray(embedding)) {
+      throw new Error("OpenAI embeddings response row was missing embedding array.");
+    }
+
+    const numericEmbedding = embedding.filter((item: unknown): item is number => typeof item === "number");
+    if (numericEmbedding.length === 0) {
+      throw new Error("OpenAI embeddings response row had no numeric values.");
+    }
+
+    vectors.push(numericEmbedding);
+  }
+
+  if (vectors.length !== normalizedInputs.length) {
+    throw new Error("OpenAI embeddings response size mismatch.");
+  }
+
+  return vectors;
+};
+
+const callOpenAIEmbedding = async (text: string): Promise<number[] | null> => {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const vectors = await callOpenAIEmbeddings([trimmed]);
+  return vectors?.[0] ?? null;
+};
+
+const buildProfileDocument = (snapshot: ContextSnapshot, transcriptText: string): string => {
+  return [
+    "Thesinator profile summary",
+    `Snapshot JSON:\n${JSON.stringify(snapshot, null, 2)}`,
+    "Conversation transcript",
+    transcriptText,
+  ].join("\n\n");
+};
+
+const normalizeTopTopics = (rows: unknown): TopTopicRow[] => {
+  if (!Array.isArray(rows)) {
+    return [];
+  }
+
+  const normalized: TopTopicRow[] = [];
+
+  for (const item of rows) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.rank !== "number" ||
+      typeof row.topic_id !== "string" ||
+      typeof row.title !== "string" ||
+      typeof row.final_score !== "number" ||
+      typeof row.vector_score !== "number" ||
+      typeof row.structured_score !== "number"
+    ) {
+      continue;
+    }
+
+    normalized.push({
+      rank: row.rank,
+      topic_id: row.topic_id,
+      title: row.title,
+      final_score: row.final_score,
+      vector_score: row.vector_score,
+      structured_score: row.structured_score,
+      reason:
+        row.reason && typeof row.reason === "object" && !Array.isArray(row.reason)
+          ? (row.reason as Record<string, unknown>)
+          : null,
+    });
+  }
+
+  normalized.sort((a, b) => a.rank - b.rank);
+  return normalized;
+};
+
+const extractMatchingMeta = (rows: TopTopicRow[]): MatchingMeta => {
+  const firstReason = rows[0]?.reason;
+  const stage =
+    firstReason && typeof firstReason.relaxation_stage === "number" && Number.isFinite(firstReason.relaxation_stage)
+      ? Math.round(firstReason.relaxation_stage)
+      : 0;
+  const totalCandidates =
+    firstReason && typeof firstReason.total_candidates === "number" && Number.isFinite(firstReason.total_candidates)
+      ? Math.round(firstReason.total_candidates)
+      : rows.length;
+
+  const usedVectorFromReason = rows.some((row) => row.reason?.used_vector === true);
+  const usedVectorFallback = rows.some((row) => row.vector_score > 0);
+
+  return {
+    used_vector: usedVectorFromReason || usedVectorFallback,
+    relaxation_stage: stage,
+    total_candidates: totalCandidates,
+  };
+};
+
+const persistCompletionSearchProfile = async (input: {
+  adminClient: ReturnType<typeof createClient>;
+  session: SessionRow;
+  snapshot: ContextSnapshot;
+}): Promise<void> => {
+  const { data: messageRows, error: messagesError } = await input.adminClient
+    .from("thesinator_messages")
+    .select("role, content, created_at")
+    .eq("session_id", input.session.id)
+    .order("created_at", { ascending: true });
+
+  if (messagesError) {
+    throw new Error(messagesError.message);
+  }
+
+  const transcriptText = (messageRows ?? [])
+    .map((message) => {
+      const role = typeof message.role === "string" ? message.role : "unknown";
+      const content = typeof message.content === "string" ? message.content.trim() : "";
+      return content.length > 0 ? `${role}: ${content}` : null;
+    })
+    .filter((line): line is string => line !== null)
+    .join("\n");
+
+  const profileDocument = buildProfileDocument(input.snapshot, transcriptText);
+  let embedding: number[] | null = null;
+  try {
+    embedding = await callOpenAIEmbedding(profileDocument);
+  } catch (embeddingError) {
+    console.error("Failed to create profile embedding, continuing with structured scoring.", embeddingError);
+  }
+
+  const { error: upsertProfileError } = await input.adminClient.rpc(
+    "upsert_thesinator_search_profile",
+    {
+      p_session_id: input.session.id,
+      p_user_id: input.session.user_id,
+      p_context_snapshot: input.snapshot,
+      p_transcript_text: transcriptText,
+      p_profile_document: profileDocument,
+      p_embedding: embedding,
+    },
+  );
+
+  if (upsertProfileError) {
+    throw new Error(upsertProfileError.message);
+  }
+};
+
+const ensureTopicEmbeddings = async (adminClient: ReturnType<typeof createClient>) => {
+  const hasOpenAiKey = Boolean(Deno.env.get("OPENAI_API_KEY"));
+  if (!hasOpenAiKey) {
+    return;
+  }
+
+  const maxTopics = toPositiveInteger(
+    Number(Deno.env.get("TOPIC_EMBED_AUTO_HEAL_MAX") ?? "200"),
+    200,
+    1000,
+  );
+  const batchSize = toPositiveInteger(
+    Number(Deno.env.get("TOPIC_EMBED_BATCH_SIZE") ?? "20"),
+    20,
+    100,
+  );
+
+  const { error: refreshError } = await adminClient.rpc("refresh_topic_search_documents");
+  if (refreshError) {
+    throw new Error(refreshError.message);
+  }
+
+  const { data: missingTopics, error: missingTopicsError } = await adminClient
+    .from("topics")
+    .select("id, title, search_document")
+    .is("embedding", null)
+    .order("id", { ascending: true })
+    .limit(maxTopics);
+
+  if (missingTopicsError) {
+    throw new Error(missingTopicsError.message);
+  }
+
+  const topics = (missingTopics ?? []) as TopicEmbeddingRow[];
+  if (topics.length === 0) {
+    return;
+  }
+
+  for (const topicChunk of chunk(topics, batchSize)) {
+    const inputs = topicChunk.map((topic) => {
+      const searchDocument = topic.search_document?.trim() ?? "";
+      const title = topic.title?.trim() ?? "";
+      return searchDocument.length > 0 ? searchDocument : title;
+    });
+
+    const embeddings = await callOpenAIEmbeddings(inputs);
+    if (!embeddings) {
+      return;
+    }
+
+    for (let index = 0; index < topicChunk.length; index += 1) {
+      const topic = topicChunk[index];
+      const embedding = embeddings[index];
+
+      const { error: setEmbeddingError } = await adminClient.rpc("set_topic_embedding", {
+        p_topic_id: topic.id,
+        p_embedding: embedding,
+      });
+
+      if (setEmbeddingError) {
+        throw new Error(setEmbeddingError.message);
+      }
+    }
+  }
+};
+
+const computeTopTopics = async (input: {
+  adminClient: ReturnType<typeof createClient>;
+  sessionId: string;
+  limit?: number;
+}): Promise<TopTopicComputation> => {
+  const { data, error } = await input.adminClient.rpc("refresh_session_top_topics", {
+    p_session_id: input.sessionId,
+    p_limit: input.limit ?? 5,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const topTopics = normalizeTopTopics(data);
+  return {
+    topTopics,
+    matchingMeta: extractMatchingMeta(topTopics),
+  };
+};
+
 const handleStart = async (req: Request) => {
   const { adminClient, userId } = await getClients(req);
   const firstQuestion = THESINATOR_QUESTIONS[0];
@@ -348,6 +680,20 @@ const enforceSessionOwnership = (
   return null;
 };
 
+const loadSessionById = async (adminClient: ReturnType<typeof createClient>, sessionId: string) => {
+  const { data: session, error: sessionError } = await adminClient
+    .from("thesinator_sessions")
+    .select("id, user_id, client_token, status, current_question_index, context_snapshot")
+    .eq("id", sessionId)
+    .single();
+
+  if (sessionError || !session) {
+    return null;
+  }
+
+  return session as SessionRow;
+};
+
 const handleTurn = async (req: Request, body: TurnRequest) => {
   const { adminClient, userId } = await getClients(req);
 
@@ -367,21 +713,12 @@ const handleTurn = async (req: Request, body: TurnRequest) => {
     return errorResponse(400, "user_answer is required.");
   }
 
-  const { data: session, error: sessionError } = await adminClient
-    .from("thesinator_sessions")
-    .select("id, user_id, client_token, status, current_question_index, context_snapshot")
-    .eq("id", body.session_id)
-    .single();
-
-  if (sessionError || !session) {
+  const session = await loadSessionById(adminClient, body.session_id);
+  if (!session) {
     return errorResponse(404, "Session not found.");
   }
 
-  const ownershipError = enforceSessionOwnership(
-    session as SessionRow,
-    userId,
-    body.client_token ?? null,
-  );
+  const ownershipError = enforceSessionOwnership(session, userId, body.client_token ?? null);
 
   if (ownershipError) {
     return errorResponse(403, ownershipError);
@@ -460,6 +797,36 @@ const handleTurn = async (req: Request, body: TurnRequest) => {
   }
 
   const audioB64 = await synthesizeWithElevenLabs(assistantReply);
+  let topTopics: TopTopicRow[] | undefined;
+  let matchingMeta: MatchingMeta | undefined;
+
+  if (isComplete) {
+    await persistCompletionSearchProfile({
+      adminClient,
+      session,
+      snapshot: mergedSnapshot,
+    }).catch((completionError) => {
+      console.error("Failed to persist completion profile.", completionError);
+    });
+
+    try {
+      await ensureTopicEmbeddings(adminClient);
+    } catch (topicEmbeddingError) {
+      console.error("Failed to auto-heal topic embeddings; proceeding without vector boost.", topicEmbeddingError);
+    }
+
+    try {
+      const computed = await computeTopTopics({
+        adminClient,
+        sessionId: session.id,
+        limit: 5,
+      });
+      topTopics = computed.topTopics;
+      matchingMeta = computed.matchingMeta;
+    } catch (completionError) {
+      console.error("Failed to compute completion top topics", completionError);
+    }
+  }
 
   return json(200, {
     session_id: session.id,
@@ -470,6 +837,43 @@ const handleTurn = async (req: Request, body: TurnRequest) => {
     question_index: nextQuestionIndex ?? session.current_question_index,
     is_complete: isComplete,
     context_snapshot: isComplete ? mergedSnapshot : undefined,
+    top_topics: isComplete ? topTopics ?? [] : undefined,
+    matching_meta: isComplete ? matchingMeta : undefined,
+  });
+};
+
+const handleTopTopics = async (req: Request, body: TopTopicsRequest) => {
+  const { adminClient, userId } = await getClients(req);
+
+  if (!body.session_id || typeof body.session_id !== "string") {
+    return errorResponse(400, "session_id is required.");
+  }
+
+  const session = await loadSessionById(adminClient, body.session_id);
+  if (!session) {
+    return errorResponse(404, "Session not found.");
+  }
+
+  const ownershipError = enforceSessionOwnership(session, userId, body.client_token ?? null);
+  if (ownershipError) {
+    return errorResponse(403, ownershipError);
+  }
+
+  try {
+    await ensureTopicEmbeddings(adminClient);
+  } catch (topicEmbeddingError) {
+    console.error("Failed to auto-heal topic embeddings for top_topics action.", topicEmbeddingError);
+  }
+
+  const computed = await computeTopTopics({
+    adminClient,
+    sessionId: session.id,
+    limit: normalizeLimit(body.limit),
+  });
+
+  return json(200, {
+    top_topics: computed.topTopics,
+    matching_meta: computed.matchingMeta,
   });
 };
 
@@ -482,9 +886,9 @@ Deno.serve(async (req) => {
     return errorResponse(405, "Method not allowed. Use POST.");
   }
 
-  let body: StartRequest | TurnRequest;
+  let body: StartRequest | TurnRequest | TopTopicsRequest;
   try {
-    body = (await req.json()) as StartRequest | TurnRequest;
+    body = (await req.json()) as StartRequest | TurnRequest | TopTopicsRequest;
   } catch {
     return errorResponse(400, "Invalid JSON payload.");
   }
@@ -499,7 +903,11 @@ Deno.serve(async (req) => {
       return await handleTurn(req, body);
     }
 
-    return errorResponse(400, "Invalid action. Use 'start' or 'turn'.");
+    if (body.action === "top_topics") {
+      return await handleTopTopics(req, body);
+    }
+
+    return errorResponse(400, "Invalid action. Use 'start', 'turn', or 'top_topics'.");
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
     return errorResponse(500, message);

@@ -2,10 +2,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Check, ArrowRight, Send, Sparkles, Users, Briefcase, Mic, MicOff, GraduationCap, TrendingUp, MessageCircle, ExternalLink, BookOpen, Footprints } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  fetchThesinatorTopTopics,
   sendThesinatorTurn,
   startThesinatorSession,
   type ContextSnapshot,
   type InputMode,
+  type MatchingMeta,
+  type TopTopicResult,
   type ThesinatorQuestion as BackendQuestion
 } from "@/services/thesinator";
 import thesinatorTalk1 from "@/assets/thesinator-talk1.png";
@@ -164,9 +167,25 @@ const thesinatorQuestions = [
 
 const ThesisFinder = () => {
   const [currentStep, setCurrentStep] = useState(1);
+  const [completedSessionId, setCompletedSessionId] = useState<string | null>(null);
+  const [completedClientToken, setCompletedClientToken] = useState<string | null>(null);
+  const [rankedTopics, setRankedTopics] = useState<TopTopicResult[]>([]);
+  const [rankedMatchingMeta, setRankedMatchingMeta] = useState<MatchingMeta | null>(null);
 
   const handleNextStep = () => {
     if (currentStep < 5) setCurrentStep(currentStep + 1);
+  };
+
+  const handleThesinatorComplete = (payload: {
+    sessionId: string;
+    clientToken: string | null;
+    topTopics: TopTopicResult[];
+    matchingMeta: MatchingMeta | null;
+  }) => {
+    setCompletedSessionId(payload.sessionId);
+    setCompletedClientToken(payload.clientToken);
+    setRankedTopics(payload.topTopics);
+    setRankedMatchingMeta(payload.matchingMeta);
   };
 
   return (
@@ -218,8 +237,15 @@ const ThesisFinder = () => {
       {/* Step content */}
       <main className="mx-auto w-full max-w-[1400px] px-4 py-8 sm:px-6 lg:px-8 animate-fade-in" key={currentStep}>
         {currentStep === 1 && <StepBasicInfo onNext={handleNextStep} />}
-        {currentStep === 2 && <StepGenieChat onNext={handleNextStep} />}
-        {currentStep === 3 && <StepMatching onNext={handleNextStep} />}
+        {currentStep === 2 && <StepGenieChat onNext={handleNextStep} onComplete={handleThesinatorComplete} />}
+        {currentStep === 3 &&
+        <StepMatching
+          onNext={handleNextStep}
+          sessionId={completedSessionId}
+          clientToken={completedClientToken}
+          initialTopTopics={rankedTopics}
+          initialMatchingMeta={rankedMatchingMeta} />
+        }
         {currentStep === 4 && <StepSimulation onNext={handleNextStep} />}
         {currentStep === 5 && <StepResults />}
       </main>
@@ -526,7 +552,18 @@ type ConversationTurn = {
   } | null;
 };
 
-const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
+const StepGenieChat = ({
+  onNext,
+  onComplete,
+}: {
+  onNext: () => void;
+  onComplete: (payload: {
+    sessionId: string;
+    clientToken: string | null;
+    topTopics: TopTopicResult[];
+    matchingMeta: MatchingMeta | null;
+  }) => void;
+}) => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [clientToken, setClientToken] = useState<string | null>(null);
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
@@ -655,9 +692,16 @@ const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
       playAudio(result.audio_b64);
 
       if (result.is_complete) {
+        const completionTopics = result.top_topics ?? [];
         setIsComplete(true);
         setFinalAssistantMessage(result.assistant_reply);
         setContextSnapshot(result.context_snapshot ?? null);
+        onComplete({
+          sessionId: result.session_id,
+          clientToken: result.client_token ?? clientToken,
+          topTopics: completionTopics,
+          matchingMeta: result.matching_meta ?? null,
+        });
       } else {
         const nextQuestion = result.next_question ?? thesinatorQuestions[result.question_index] ?? null;
         if (!nextQuestion) {
@@ -691,7 +735,7 @@ const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
     } finally {
       setIsSubmitting(false);
     }
-  }, [activeQuestion, clientToken, isComplete, isSubmitting, playAudio, sessionId]);
+  }, [activeQuestion, clientToken, isComplete, isSubmitting, onComplete, playAudio, sessionId]);
 
   const captureSpeechTranscript = useCallback((transcript: string) => {
     if (isSubmitting || isComplete || !activeQuestion) {
@@ -917,52 +961,143 @@ const StepGenieChat = ({ onNext }: {onNext: () => void;}) => {
 };
 
 /* Step 3 */
-const StepMatching = ({ onNext }: {onNext: () => void;}) => {
-  const [matching, setMatching] = useState(false);
-  const [matched, setMatched] = useState(false);
+const StepMatching = ({
+  onNext,
+  sessionId,
+  clientToken,
+  initialTopTopics,
+  initialMatchingMeta,
+}: {
+  onNext: () => void;
+  sessionId: string | null;
+  clientToken: string | null;
+  initialTopTopics: TopTopicResult[];
+  initialMatchingMeta: MatchingMeta | null;
+}) => {
+  const [topics, setTopics] = useState<TopTopicResult[]>(initialTopTopics);
+  const [matchingMeta, setMatchingMeta] = useState<MatchingMeta | null>(initialMatchingMeta);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const handleMatch = () => {
-    setMatching(true);
-    setTimeout(() => {
-      setMatching(false);
-      setMatched(true);
-    }, 2000);
-  };
+  const loadTopicsFromRpc = useCallback(async () => {
+    if (!sessionId) {
+      setTopics([]);
+      return;
+    }
+
+    setIsLoading(true);
+    setFetchError(null);
+    try {
+      const response = await fetchThesinatorTopTopics({
+        sessionId,
+        clientToken,
+        limit: 5,
+      });
+      setTopics(response.top_topics);
+      setMatchingMeta(response.matching_meta);
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Failed to load ranked topics.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clientToken, sessionId]);
+
+  useEffect(() => {
+    setTopics(initialTopTopics);
+    setMatchingMeta(initialMatchingMeta);
+  }, [initialMatchingMeta, initialTopTopics, sessionId]);
+
+  useEffect(() => {
+    if (initialTopTopics.length > 0) {
+      return;
+    }
+    if (!sessionId) {
+      return;
+    }
+    void loadTopicsFromRpc();
+  }, [initialTopTopics.length, loadTopicsFromRpc, sessionId]);
 
   return (
-    <div className="text-center max-w-md mx-auto">
-      <h2 className="ds-title-md mb-4">Thesis Matching</h2>
-      <p className="ds-body text-muted-foreground mb-8">
-        Based on your conversation with Thesinator, we find the best thesis topics for you.
-      </p>
+    <div className="mx-auto max-w-4xl space-y-6">
+      <div className="text-center">
+        <h2 className="ds-title-md mb-4">Thesis Matching</h2>
+        <p className="ds-body text-muted-foreground">
+          Based on your Thesinator conversation and profile, these are your best matching thesis topics.
+        </p>
+      </div>
 
-      {!matched ?
-      <Button onClick={handleMatch} disabled={matching} className="rounded-full gap-2" size="lg">
-          {matching ?
-        <>
-              <span className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-              Matching in progress...
-            </> :
-
-        <>
-              <Sparkles size={18} />
-              Run thesis matching
-            </>
-        }
-        </Button> :
-
-      <div className="animate-fade-in">
-          <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center mx-auto mb-4">
-            <Check size={28} className="text-primary-foreground" />
-          </div>
-          <p className="ds-body text-foreground mb-6">12 matching topics found!</p>
-          <Button onClick={onNext} className="rounded-full gap-2">
-            Continue to simulation <ArrowRight size={16} />
-          </Button>
+      {isLoading &&
+      <div className="flex justify-center py-8">
+          <span className="inline-flex gap-1.5">
+            <span className="w-3 h-3 bg-primary rounded-full animate-bounce" />
+            <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.1s" }} />
+            <span className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }} />
+          </span>
         </div>
       }
-    </div>);
 
+      {!isLoading && topics.length > 0 &&
+      <div className="space-y-3">
+          {matchingMeta && !matchingMeta.used_vector &&
+          <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3">
+              <p className="ds-small text-amber-800">
+                Showing structured ranking fallback while vector embeddings are warming up.
+              </p>
+            </div>
+          }
+          {topics.map((topic) =>
+        <div key={topic.topic_id} className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="ds-caption text-primary font-semibold tracking-wide">TOP {topic.rank}</p>
+                  <p className="ds-title-cards text-foreground mt-1">{topic.title}</p>
+                </div>
+                <div className="text-right min-w-24">
+                  <p className="ds-caption text-muted-foreground">Score</p>
+                  <p className="ds-title-cards text-primary">{(topic.final_score * 100).toFixed(1)}%</p>
+                </div>
+              </div>
+              <div className="mt-3 h-2 rounded-full bg-muted overflow-hidden">
+                <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${Math.min(topic.final_score * 100, 100)}%` }} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full bg-muted px-3 py-1 ds-caption text-foreground">
+                  Vector {(topic.vector_score * 100).toFixed(0)}%
+                </span>
+                <span className="rounded-full bg-muted px-3 py-1 ds-caption text-foreground">
+                  Structured {(topic.structured_score * 100).toFixed(0)}%
+                </span>
+              </div>
+            </div>
+        )}
+        </div>
+      }
+
+      {!isLoading && topics.length === 0 &&
+      <div className="rounded-lg border border-border bg-card p-6 text-center">
+          <p className="ds-body text-muted-foreground">
+            No ranked topics are available yet for this session.
+          </p>
+          {sessionId &&
+          <Button onClick={() => void loadTopicsFromRpc()} variant="outline" className="mt-4 rounded-full">
+              Retry loading topics
+            </Button>
+          }
+        </div>
+      }
+
+      {fetchError &&
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+          <p className="ds-small text-destructive">{fetchError}</p>
+        </div>
+      }
+
+      <div className="text-center">
+        <Button onClick={onNext} className="rounded-full gap-2" disabled={isLoading || topics.length === 0}>
+          Continue to simulation <ArrowRight size={16} />
+        </Button>
+      </div>
+    </div>);
 };
 
 /* Step 4 */
