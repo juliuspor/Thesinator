@@ -22,6 +22,17 @@ type TurnRequest = {
   client_token?: string | null;
 };
 
+type CompleteRequest = {
+  action: "complete";
+  session_id: string;
+  client_token?: string | null;
+  answers: Array<{
+    question_id: number;
+    user_answer: string;
+    input_mode: InputMode;
+  }>;
+};
+
 type TopTopicsRequest = {
   action: "top_topics";
   session_id: string;
@@ -478,7 +489,7 @@ const extractMatchingMeta = (rows: TopTopicRow[]): MatchingMeta => {
 };
 
 const persistCompletionSearchProfile = async (input: {
-  adminClient: ReturnType<typeof createClient>;
+  adminClient: any;
   session: SessionRow;
   snapshot: ContextSnapshot;
 }): Promise<void> => {
@@ -493,12 +504,12 @@ const persistCompletionSearchProfile = async (input: {
   }
 
   const transcriptText = (messageRows ?? [])
-    .map((message) => {
+    .map((message: Record<string, unknown>) => {
       const role = typeof message.role === "string" ? message.role : "unknown";
       const content = typeof message.content === "string" ? message.content.trim() : "";
       return content.length > 0 ? `${role}: ${content}` : null;
     })
-    .filter((line): line is string => line !== null)
+    .filter((line: string | null): line is string => line !== null)
     .join("\n");
 
   const profileDocument = buildProfileDocument(input.snapshot, transcriptText);
@@ -526,7 +537,7 @@ const persistCompletionSearchProfile = async (input: {
   }
 };
 
-const ensureTopicEmbeddings = async (adminClient: ReturnType<typeof createClient>) => {
+const ensureTopicEmbeddings = async (adminClient: any) => {
   const hasOpenAiKey = Boolean(Deno.env.get("OPENAI_API_KEY"));
   if (!hasOpenAiKey) {
     return;
@@ -593,7 +604,7 @@ const ensureTopicEmbeddings = async (adminClient: ReturnType<typeof createClient
 };
 
 const computeTopTopics = async (input: {
-  adminClient: ReturnType<typeof createClient>;
+  adminClient: any;
   sessionId: string;
   limit?: number;
 }): Promise<TopTopicComputation> => {
@@ -655,6 +666,7 @@ const handleStart = async (req: Request) => {
     client_token: session.client_token,
     assistant_reply: assistantReply,
     audio_b64: audioB64,
+    questions: THESINATOR_QUESTIONS,
     question: firstQuestion,
     question_index: 0,
     is_complete: false,
@@ -680,7 +692,7 @@ const enforceSessionOwnership = (
   return null;
 };
 
-const loadSessionById = async (adminClient: ReturnType<typeof createClient>, sessionId: string) => {
+const loadSessionById = async (adminClient: any, sessionId: string) => {
   const { data: session, error: sessionError } = await adminClient
     .from("thesinator_sessions")
     .select("id, user_id, client_token, status, current_question_index, context_snapshot")
@@ -692,6 +704,155 @@ const loadSessionById = async (adminClient: ReturnType<typeof createClient>, ses
   }
 
   return session as SessionRow;
+};
+
+const completeSessionWithAnswers = async (input: {
+  adminClient: any;
+  session: SessionRow;
+  answers: Array<{
+    question_id: number;
+    user_answer: string;
+    input_mode: InputMode;
+  }>;
+}) => {
+  if (input.answers.length !== THESINATOR_QUESTIONS.length) {
+    return errorResponse(400, `answers must contain exactly ${THESINATOR_QUESTIONS.length} entries.`);
+  }
+
+  if (input.session.current_question_index !== 0) {
+    return errorResponse(409, "This session already has recorded progress and cannot be batch-completed.");
+  }
+
+  let mergedSnapshot: ContextSnapshot = mergeContextSnapshot(input.session.context_snapshot, {});
+  let finalAssistantReply = "Thanks for sharing that.";
+
+  for (let index = 0; index < THESINATOR_QUESTIONS.length; index += 1) {
+    const expectedQuestion = THESINATOR_QUESTIONS[index];
+    const answer = input.answers[index];
+
+    if (!answer || answer.question_id !== expectedQuestion.id) {
+      return errorResponse(409, `Question mismatch at position ${index + 1}.`);
+    }
+
+    if (!isInputMode(answer.input_mode)) {
+      return errorResponse(400, "Each answer input_mode must be one of: mcq, text, speech.");
+    }
+
+    const trimmedAnswer = answer.user_answer.trim();
+    if (!trimmedAnswer) {
+      return errorResponse(400, `Answer ${index + 1} is empty.`);
+    }
+
+    const { error: userMessageError } = await input.adminClient.from("thesinator_messages").insert({
+      session_id: input.session.id,
+      role: "user",
+      question_id: expectedQuestion.id,
+      input_mode: answer.input_mode,
+      content: trimmedAnswer,
+    });
+
+    if (userMessageError) {
+      throw new Error(userMessageError.message);
+    }
+
+    const modelResult = await callAnthropic({
+      currentQuestion: expectedQuestion,
+      currentQuestionIndex: index,
+      userAnswer: trimmedAnswer,
+      contextSnapshot: mergedSnapshot,
+    });
+
+    mergedSnapshot = mergeContextSnapshot(mergedSnapshot, modelResult.snapshot_patch);
+    const isLastQuestion = index === THESINATOR_QUESTIONS.length - 1;
+
+    if (isLastQuestion) {
+      finalAssistantReply = buildAssistantReply(modelResult.assistant_reply, null, true);
+      continue;
+    }
+
+    const nextQuestion = THESINATOR_QUESTIONS[index + 1];
+    const { error: assistantMessageError } = await input.adminClient.from("thesinator_messages").insert({
+      session_id: input.session.id,
+      role: "assistant",
+      question_id: nextQuestion.id,
+      input_mode: null,
+      content: nextQuestion.question,
+    });
+
+    if (assistantMessageError) {
+      throw new Error(assistantMessageError.message);
+    }
+  }
+
+  const { error: updateSessionError } = await input.adminClient
+    .from("thesinator_sessions")
+    .update({
+      status: "completed",
+      current_question_index: THESINATOR_QUESTIONS.length - 1,
+      context_snapshot: mergedSnapshot,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", input.session.id);
+
+  if (updateSessionError) {
+    throw new Error(updateSessionError.message);
+  }
+
+  const { error: finalAssistantMessageError } = await input.adminClient.from("thesinator_messages").insert({
+    session_id: input.session.id,
+    role: "assistant",
+    question_id: THESINATOR_QUESTIONS[THESINATOR_QUESTIONS.length - 1]?.id ?? null,
+    input_mode: null,
+    content: finalAssistantReply,
+  });
+
+  if (finalAssistantMessageError) {
+    throw new Error(finalAssistantMessageError.message);
+  }
+
+  await persistCompletionSearchProfile({
+    adminClient: input.adminClient,
+    session: input.session,
+    snapshot: mergedSnapshot,
+  }).catch((completionError) => {
+    console.error("Failed to persist completion profile.", completionError);
+  });
+
+  try {
+    await ensureTopicEmbeddings(input.adminClient);
+  } catch (topicEmbeddingError) {
+    console.error("Failed to auto-heal topic embeddings; proceeding without vector boost.", topicEmbeddingError);
+  }
+
+  let topTopics: TopTopicRow[] = [];
+  let matchingMeta: MatchingMeta | undefined;
+
+  try {
+    const computed = await computeTopTopics({
+      adminClient: input.adminClient,
+      sessionId: input.session.id,
+      limit: 5,
+    });
+    topTopics = computed.topTopics;
+    matchingMeta = computed.matchingMeta;
+  } catch (completionError) {
+    console.error("Failed to compute completion top topics", completionError);
+  }
+
+  const audioB64 = await synthesizeWithElevenLabs(finalAssistantReply);
+
+  return json(200, {
+    session_id: input.session.id,
+    client_token: input.session.client_token,
+    assistant_reply: finalAssistantReply,
+    audio_b64: audioB64,
+    next_question: null,
+    question_index: THESINATOR_QUESTIONS.length - 1,
+    is_complete: true,
+    context_snapshot: mergedSnapshot,
+    top_topics: topTopics,
+    matching_meta: matchingMeta,
+  });
 };
 
 const handleTurn = async (req: Request, body: TurnRequest) => {
@@ -842,6 +1003,38 @@ const handleTurn = async (req: Request, body: TurnRequest) => {
   });
 };
 
+const handleComplete = async (req: Request, body: CompleteRequest) => {
+  const { adminClient, userId } = await getClients(req);
+
+  if (!body.session_id || typeof body.session_id !== "string") {
+    return errorResponse(400, "session_id is required.");
+  }
+
+  if (!Array.isArray(body.answers)) {
+    return errorResponse(400, "answers must be an array.");
+  }
+
+  const session = await loadSessionById(adminClient, body.session_id);
+  if (!session) {
+    return errorResponse(404, "Session not found.");
+  }
+
+  const ownershipError = enforceSessionOwnership(session, userId, body.client_token ?? null);
+  if (ownershipError) {
+    return errorResponse(403, ownershipError);
+  }
+
+  if (session.status !== "active") {
+    return errorResponse(409, `Session is not active (current status: ${session.status}).`);
+  }
+
+  return await completeSessionWithAnswers({
+    adminClient,
+    session,
+    answers: body.answers,
+  });
+};
+
 const handleTopTopics = async (req: Request, body: TopTopicsRequest) => {
   const { adminClient, userId } = await getClients(req);
 
@@ -886,9 +1079,9 @@ Deno.serve(async (req) => {
     return errorResponse(405, "Method not allowed. Use POST.");
   }
 
-  let body: StartRequest | TurnRequest | TopTopicsRequest;
+  let body: StartRequest | TurnRequest | CompleteRequest | TopTopicsRequest;
   try {
-    body = (await req.json()) as StartRequest | TurnRequest | TopTopicsRequest;
+    body = (await req.json()) as StartRequest | TurnRequest | CompleteRequest | TopTopicsRequest;
   } catch {
     return errorResponse(400, "Invalid JSON payload.");
   }
@@ -903,11 +1096,15 @@ Deno.serve(async (req) => {
       return await handleTurn(req, body);
     }
 
+    if (body.action === "complete") {
+      return await handleComplete(req, body);
+    }
+
     if (body.action === "top_topics") {
       return await handleTopTopics(req, body);
     }
 
-    return errorResponse(400, "Invalid action. Use 'start', 'turn', or 'top_topics'.");
+    return errorResponse(400, "Invalid action. Use 'start', 'turn', 'complete', or 'top_topics'.");
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected server error.";
     return errorResponse(500, message);

@@ -51,8 +51,8 @@ import {
 } from "@/services/futureSessions";
 import { LiveFuturePathGraph } from "@/components/LiveFuturePathGraph";
 import {
+  completeThesinatorSession,
   fetchThesinatorTopTopics,
-  sendThesinatorTurn,
   startThesinatorSession,
   type ContextSnapshot,
   type InputMode,
@@ -126,6 +126,8 @@ const FUTURE_SESSION_STORAGE_KEY = "starthack-active-future-session";
 const ACTIVE_FUTURE_STORAGE_KEY = "starthack-active-future-selection";
 const THESINATOR_QUESTION_COUNT = 3;
 
+const buildPendingAssistantReply = (question: BackendQuestion) => question.question;
+
 const inputModeLabels: Record<InputMode, string> = {
   mcq: "MCQ",
   text: "TEXT",
@@ -168,7 +170,7 @@ const formatMatchingNote = (matchingMeta: MatchingMeta | null) => {
     return null;
   }
 
-  return "Using your best matches while search finishes loading.";
+  return "Showing your best matches while the full list loads.";
 };
 
 const graphPreviewSignature = (graphBuild: FutureViewState["graph_build"]) =>
@@ -290,7 +292,7 @@ const ThesinatorAvatar = ({ isTyping, isSpeaking }: { isTyping: boolean; isSpeak
         <img
           src={currentImage}
           alt="Thesinator"
-          className="h-36 w-36 object-contain transition-opacity duration-200 sm:h-44 sm:w-44 xl:h-52 xl:w-52"
+          className="h-44 w-44 object-contain transition-opacity duration-200 sm:h-56 sm:w-56 xl:h-72 xl:w-72"
         />
         <div className="absolute -top-2 -right-2 animate-sparkle">
           <Sparkles size={16} className="text-ai-from" />
@@ -501,6 +503,13 @@ const FutureCardPreview = ({
 }) => {
   const pathReason = future.swarm_impact?.why_this_path ?? future.why_fit;
   const decision = future.swarm_impact?.decision ?? null;
+  const alumniExample = future.alumni_examples[0] ?? null;
+  const alumniLine = alumniExample
+    ? compactText(
+        `Seen before: ${alumniExample.full_name} turned a similar thesis into ${alumniExample.current_role} at ${alumniExample.current_company}.`,
+        88,
+      )
+    : null;
 
   return (
     <article className="rounded-[1.5rem] border border-border bg-card p-5 shadow-sm transition-transform duration-300 hover:-translate-y-0.5">
@@ -521,14 +530,15 @@ const FutureCardPreview = ({
       </div>
       <div className="mt-5 space-y-3">
         <h3 className="ds-title-sm text-foreground">{future.thesis_title}</h3>
-        <p className="ds-small text-muted-foreground">{compactText(future.thesis_summary, 112)}</p>
+        <p className="ds-small text-muted-foreground">{compactText(future.thesis_summary, 82)}</p>
         <div className="rounded-2xl bg-muted/50 px-4 py-3">
           <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">Why this path now</p>
-          <p className="ds-small mt-2 text-foreground">{compactText(pathReason, 130)}</p>
+          <p className="ds-small mt-2 text-foreground">{compactText(pathReason, 92)}</p>
         </div>
         <p className="ds-small text-muted-foreground">
           Could lead to: {future.future_role} at {future.future_organization}
         </p>
+        {alumniLine && <p className="ds-small text-muted-foreground">{alumniLine}</p>}
       </div>
       <div className="mt-6 flex items-center justify-between">
         <div className="flex items-center gap-2 text-muted-foreground">
@@ -585,6 +595,56 @@ const formatActionType = (value: string) =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 
+const statusDisplayLabels: Record<string, string> = {
+  queued: "Up next",
+  preparing: "In progress",
+  running: "In progress",
+  ready: "Ready",
+  failed: "Needs attention",
+};
+
+const formatStatusLabel = (value: string | null | undefined) => {
+  if (!value) {
+    return "Up next";
+  }
+
+  return statusDisplayLabels[value.toLowerCase()] ?? formatActionType(value);
+};
+
+const stageDisplayLabels: Record<string, string> = {
+  "Stakeholder discovery": "Finding key connections",
+  "Waiting for stakeholder graph": "Waiting for your map",
+  "Graph build failed": "Map could not be built",
+  "Preparing simulation": "Getting your path ready",
+  "Waiting for simulation": "Waiting for your path",
+  "Waiting for full swarm run": "Waiting for your path",
+  "Swarm failed": "Future path could not continue",
+  "Collecting finished swarm outcomes": "Gathering your results",
+  "Preparing thesis cards": "Preparing your thesis matches",
+  "Finalizing thesis outcomes": "Preparing your thesis matches",
+  "Saving thesis outcomes": "Saving your thesis matches",
+  "Thesis outcomes ready": "Thesis matches ready",
+  "Outcome synthesis failed": "Thesis matches could not be prepared",
+  "Finalizing thesis outcomes failed": "Thesis matches could not be prepared",
+  "MiroFish graph start failed": "Map could not be started",
+  "MiroFish swarm start failed": "Future path could not be started",
+  "MiroFish task unavailable": "Map update unavailable",
+  "Swarm unavailable": "Future path unavailable",
+};
+
+const formatStageLabel = (value: string | null | undefined, fallback: string) => {
+  if (!value) {
+    return fallback;
+  }
+
+  return (
+    stageDisplayLabels[value] ??
+    value
+      .replace(/graph/gi, "map")
+      .replace(/swarm/gi, "future path")
+  );
+};
+
 const describeSwarmAction = (action: FutureSwarmAction) => {
   const content =
     typeof action.action_args.content === "string"
@@ -613,17 +673,17 @@ const getFutureBuildCopy = (
 ) => {
   if (graphBuild.status !== "ready") {
     return {
-      title: "Building your stakeholder graph",
+      title: "Building your stakeholder map",
       body:
-        "We’re mapping the people, thesis directions, companies, universities, and experts around your best matches.",
+        "We’re connecting the people, thesis options, companies, universities, and experts linked to your best matches.",
     };
   }
 
   if (swarm.status === "queued" || swarm.status === "preparing") {
     return {
-      title: "Preparing the agent world",
+      title: "Preparing your future path",
       body:
-        "The graph is ready. MiroFish is now preparing the agents and the simulation that will animate your future path.",
+        "Your map is ready. We’re now preparing the next step that will bring your future path to life.",
     };
   }
 
@@ -631,23 +691,23 @@ const getFutureBuildCopy = (
     return {
       title: "Your future path is running live",
       body:
-        "The MiroFish swarm is now exploring how your strongest thesis directions could unfold across people, places, and organizations.",
+        "We’re now exploring how your strongest thesis options could unfold across people, places, and organizations.",
     };
   }
 
   if (swarm.status === "ready" && finalization.status !== "ready") {
     return {
-      title: "Finalizing thesis outcomes",
+      title: "Preparing your thesis matches",
       body:
-        "The swarm run is complete. We’re now turning the finished simulation into ranked thesis paths, future selves, and ready-to-open detail pages.",
+        "Your future path is complete. We’re now turning it into clear thesis matches and future options.",
     };
   }
 
   if (swarm.status === "ready" && finalization.status === "ready") {
     return {
-      title: "Your thesis outcomes are ready",
+      title: "Your thesis matches are ready",
       body:
-        "The stakeholder graph, finished swarm run, and thesis outcomes are all ready. Every thesis path now includes swarm-backed reasoning and a prepared future self.",
+        "Your stakeholder map, future path, and thesis matches are ready to explore.",
     };
   }
 
@@ -664,30 +724,30 @@ const getFinalizationStatusCopy = (finalization: FutureViewState["finalization"]
   }
 
   if (finalization.status === "ready") {
-    return "The finished swarm run has been turned into thesis outcomes, visible reasons, and ready future selves.";
+    return "Your future path has been turned into thesis matches, clear reasons, and ready future options.";
   }
 
   if (finalization.status === "preparing") {
-    return "We’re translating the finished swarm run into ranked thesis paths and future-self packages for every card.";
+    return "We’re preparing your thesis matches and future options now.";
   }
 
-  return "Thesis outcomes will finalize after the full swarm run completes.";
+  return "We’re finishing your matches before showing your future options.";
 };
 
 const getSwarmStatusCopy = (swarm: SwarmState) => {
   if (swarm.status === "failed") {
-    return "The swarm hit a problem, but the rest of the future view can still stay usable.";
+    return "Your future path hit a problem, but the rest of the view can still stay usable.";
   }
 
   if (swarm.status === "ready") {
-    return "The simulation has finished its run and the latest swarm update is captured below.";
+    return "Your future path is ready, and the latest update is shown below.";
   }
 
   if (swarm.status === "running") {
-    return "The agents are actively exploring how this future path could unfold in the live run.";
+    return "We’re actively exploring how this future path could unfold.";
   }
 
-  return "The agents are being prepared around the graph before the live run starts.";
+  return "We’re getting your future path ready now.";
 };
 
 const FutureBuildStatusPanel = ({
@@ -699,7 +759,7 @@ const FutureBuildStatusPanel = ({
     ? graphBuild.events[graphBuild.events.length - 1]
     : {
         timestamp: null,
-        message: "We’re still waiting for the first graph update from MiroFish.",
+        message: "We’re still waiting for the first map update.",
         stage_label: graphBuild.stage_label,
         status: graphBuild.status,
         progress: graphBuild.progress,
@@ -710,14 +770,12 @@ const FutureBuildStatusPanel = ({
     <section className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="ds-title-cards text-foreground">
-            {latestEvent.stage_label ?? "Stakeholder discovery"}
-          </p>
-          <p className="ds-small text-muted-foreground">Latest graph build update</p>
+          <p className="ds-title-cards text-foreground">Stakeholder map</p>
+          <p className="ds-small text-muted-foreground">Map progress</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
-            {graphBuild.status}
+            {formatStatusLabel(graphBuild.status)}
           </span>
           <span className="rounded-full bg-primary/10 px-3 py-1 ds-caption text-primary">
             {graphBuild.progress}%
@@ -729,6 +787,10 @@ const FutureBuildStatusPanel = ({
           className="h-full rounded-full bg-primary transition-all duration-500"
           style={{ width: `${graphBuild.progress}%` }}
         />
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+        <span>Current step</span>
+        <span>{formatStageLabel(latestEvent.stage_label, "Finding key connections")}</span>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
         <span>Latest update</span>
@@ -766,14 +828,12 @@ const FutureSwarmStatusPanel = ({
     <section className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="ds-title-cards text-foreground">
-            {latestEvent.stage_label ?? "Swarm updates"}
-          </p>
-          <p className="ds-small text-muted-foreground">Latest simulation update</p>
+          <p className="ds-title-cards text-foreground">Future path</p>
+          <p className="ds-small text-muted-foreground">Path progress</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
-            {swarm.status}
+            {formatStatusLabel(swarm.status)}
           </span>
           {swarm.runner_status && (
             <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
@@ -790,6 +850,10 @@ const FutureSwarmStatusPanel = ({
           className="h-full rounded-full bg-primary transition-all duration-500"
           style={{ width: `${swarm.progress}%` }}
         />
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+        <span>Current step</span>
+        <span>{formatStageLabel(latestEvent.stage_label, "Getting your path ready")}</span>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
         <span>Latest update</span>
@@ -813,19 +877,28 @@ const FutureFinalizationStatusPanel = ({
   finalization: FutureViewState["finalization"];
 }) => {
   const latestTimestamp = finalization.status === "ready" ? "now" : null;
+  const currentStep =
+    formatStageLabel(
+      finalization.stage_label,
+      finalization.status === "failed"
+        ? "Thesis matches could not be prepared"
+        : finalization.status === "ready"
+          ? "Thesis matches ready"
+          : finalization.status === "preparing"
+            ? "Preparing your thesis matches"
+            : "Waiting for your path",
+    );
 
   return (
     <section className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="ds-title-cards text-foreground">
-            {finalization.stage_label ?? "Finalizing thesis outcomes"}
-          </p>
-          <p className="ds-small text-muted-foreground">Latest thesis outcome update</p>
+          <p className="ds-title-cards text-foreground">Thesis matches</p>
+          <p className="ds-small text-muted-foreground">Match progress</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
-            {finalization.status}
+            {formatStatusLabel(finalization.status)}
           </span>
           <span className="rounded-full bg-primary/10 px-3 py-1 ds-caption text-primary">
             {finalization.progress}%
@@ -837,6 +910,10 @@ const FutureFinalizationStatusPanel = ({
           className="h-full rounded-full bg-primary transition-all duration-500"
           style={{ width: `${finalization.progress}%` }}
         />
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+        <span>Current step</span>
+        <span>{currentStep}</span>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
         <span>Latest update</span>
@@ -866,7 +943,7 @@ const GraphPreviewCanvas = ({
           <div>
             <p className="ds-title-cards text-foreground">Stakeholder map</p>
             <p className="ds-small text-muted-foreground">
-              Watch the people, institutions, and thesis paths settle into the same future view.
+              See how people, organizations, and thesis options connect around your future path.
             </p>
           </div>
         </div>
@@ -897,12 +974,8 @@ const SwarmActionFeed = ({
     <section className="rounded-[1.75rem] border border-border bg-card p-6 shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="ds-title-cards text-foreground">Latest swarm action</p>
-          <p className="ds-small text-muted-foreground">
-            {latestAction
-              ? "Latest action from the live run"
-              : "Actions appear here once the live run starts."}
-          </p>
+          <p className="ds-title-cards text-foreground">Latest update</p>
+          <p className="ds-small text-muted-foreground">Most recent step</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="rounded-full bg-background px-3 py-1 ds-caption text-muted-foreground">
@@ -930,8 +1003,8 @@ const SwarmActionFeed = ({
         {!latestAction ? (
           <p className="mt-3 ds-small text-foreground">
             {swarm.status === "running"
-              ? "The swarm is live, but the first visible action has not landed yet."
-              : "The swarm has not started acting yet."}
+              ? "Your future path is live, but the first visible step has not appeared yet."
+              : "Your future path has not started yet."}
           </p>
         ) : (
           <>
@@ -1048,7 +1121,6 @@ const BuildFutureStage = ({
   const canRevealTheses = futureSession.matched_futures.length > 0 && finalization.status === "ready";
   const copy = getFutureBuildCopy(graphBuild, swarm, finalization);
   const hasFutureViewError = graphBuild.error || swarm.error || finalization.error;
-  const showFinalizationPanel = finalization.status !== "queued";
 
   return (
     <div className="space-y-8">
@@ -1061,10 +1133,10 @@ const BuildFutureStage = ({
         {matchingNote && <p className="mt-4 ds-caption text-muted-foreground">{matchingNote}</p>}
       </div>
 
-      <div className={`grid gap-8 xl:grid-cols-2 ${showFinalizationPanel ? "2xl:grid-cols-4" : "2xl:grid-cols-3"}`}>
+      <div className="grid gap-8 xl:grid-cols-2 2xl:grid-cols-4">
         <FutureBuildStatusPanel graphBuild={graphBuild} />
         <FutureSwarmStatusPanel swarm={swarm} />
-        {showFinalizationPanel && <FutureFinalizationStatusPanel finalization={finalization} />}
+        <FutureFinalizationStatusPanel finalization={finalization} />
         <SwarmActionFeed swarm={swarm} />
       </div>
 
@@ -1130,7 +1202,7 @@ const ExploreStage = ({
         <p className="ds-caption uppercase tracking-[0.18em] text-muted-foreground">Explore theses</p>
         <h2 className="ds-title-lg mt-3 text-foreground">Choose a thesis to explore</h2>
         <p className="ds-body mt-3 max-w-3xl text-muted-foreground">
-          Start with your best matches. More ideas are below.
+          Start with your best matches.
         </p>
         {isFutureViewUpdating && (
           <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-primary">
@@ -1174,7 +1246,7 @@ const ExploreStage = ({
             <div>
               <p className="ds-title-cards text-foreground">More ideas</p>
               <p className="ds-small text-muted-foreground">
-                Other theses you may also like.
+                More options to explore.
               </p>
             </div>
           </div>
@@ -1253,7 +1325,7 @@ const FutureDetailStage = ({
               <p className="ds-title-cards text-foreground">Ask your future self</p>
             </div>
             <p className="ds-body mt-3 text-foreground">
-              Ask what this path is really like and what matters early.
+              Ask what this path is like.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <span className={`rounded-full px-3 py-1 ds-caption ${sourceStyles[future.source]}`}>
@@ -1271,7 +1343,7 @@ const FutureDetailStage = ({
               </span>
             </div>
             <p className="mt-4 ds-small text-muted-foreground">
-              <span className="text-foreground">Why this path now:</span> {compactText(swarmReason, 180)}
+              <span className="text-foreground">Why this path now:</span> {compactText(swarmReason, 104)}
             </p>
           </div>
           <div className="rounded-[1.5rem] border border-primary/20 bg-background/80 px-4 py-4 xl:w-[320px]">
@@ -1284,7 +1356,7 @@ const FutureDetailStage = ({
                 detail?.hero_summary ??
                   detail?.future_self_intro ??
                   "Ask what changed, what mattered early, or how to prepare before committing.",
-                140,
+                96,
               )}
             </p>
           </div>
@@ -1365,7 +1437,7 @@ const FutureDetailStage = ({
             <p className="ds-caption uppercase tracking-[0.18em] text-muted-foreground">This thesis</p>
             <h2 className="ds-title-xl mt-3 text-foreground">{future.thesis_title}</h2>
             <p className="ds-small mt-4 max-w-2xl text-muted-foreground">
-              Start here, then explore where it could lead.
+              Start with the core idea.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               {future.grounding.fields.slice(0, 3).map((field) => (
@@ -1382,9 +1454,8 @@ const FutureDetailStage = ({
             </div>
             <p className="ds-label mt-3 text-foreground">{detail?.hero_title ?? `${future.future_role} at ${future.future_organization}`}</p>
             <p className="ds-small mt-3 text-muted-foreground">
-              {compactText(detail?.hero_summary ?? future.future_path_snapshot, 150)}
+              {compactText(detail?.hero_summary ?? future.future_path_snapshot, 96)}
             </p>
-            <p className="ds-small mt-4 text-muted-foreground">{detail?.opening_note ?? future.future_path_snapshot}</p>
           </div>
         </div>
 
@@ -1394,7 +1465,7 @@ const FutureDetailStage = ({
               <div>
                 <p className="ds-label text-foreground">Thesis details</p>
                 <p className="ds-small text-muted-foreground">
-                  See the summary and why it fits.
+                  See the summary and fit.
                 </p>
               </div>
               <CollapsibleTrigger asChild>
@@ -1410,9 +1481,9 @@ const FutureDetailStage = ({
             <CollapsibleContent className="data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down overflow-hidden">
               <div className="mt-4 space-y-4">
                 <div className="rounded-2xl border border-border bg-background px-4 py-4">
-                  <p className="ds-body text-foreground">{future.thesis_summary}</p>
+                  <p className="ds-body text-foreground">{compactText(future.thesis_summary, 220)}</p>
                   <p className="ds-small mt-4 text-muted-foreground">
-                    {detail?.why_this_path ?? future.why_fit}
+                    {compactText(detail?.why_this_path ?? future.why_fit, 150)}
                   </p>
                 </div>
                 <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -1420,7 +1491,7 @@ const FutureDetailStage = ({
                     <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">
                       What the swarm noticed
                     </p>
-                    <p className="ds-small mt-2 text-foreground">{futureSelfAngle}</p>
+                    <p className="ds-small mt-2 text-foreground">{compactText(futureSelfAngle, 120)}</p>
                   </div>
                   {swarmRisks.length > 0 && (
                     <div className="rounded-2xl border border-border bg-background px-4 py-4">
@@ -1640,6 +1711,7 @@ const buildFallbackMapNodes = (future: FutureCard): FutureMapNode[] => {
 const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscoverPayload) => void }) => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [clientToken, setClientToken] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<BackendQuestion[]>([]);
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [finalAssistantMessage, setFinalAssistantMessage] = useState<string | null>(null);
@@ -1680,6 +1752,7 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
     setIsLoadingSession(true);
     setError(null);
     setIsComplete(false);
+    setQuestions([]);
     setTurns([]);
     setCurrentQuestionIndex(0);
     setFinalAssistantMessage(null);
@@ -1690,8 +1763,10 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
 
     try {
       const start = await startThesinatorSession();
+      const preloadedQuestions = start.questions.length > 0 ? start.questions : [start.question];
       setSessionId(start.session_id);
       setClientToken(start.client_token);
+      setQuestions(preloadedQuestions);
       setTurns([
         {
           question: start.question,
@@ -1734,92 +1809,81 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
 
       setError(null);
       setTextInput("");
-      setIsSubmitting(true);
-      setTurns((prev) => {
-        if (prev.length === 0) {
-          return prev;
-        }
+      if (turns.length === 0) {
+        return;
+      }
 
-        const next = [...prev];
-        const lastTurn = next[next.length - 1];
-        next[next.length - 1] = {
-          ...lastTurn,
-          userAnswer: {
-            text: trimmed,
-            inputMode,
-          },
-        };
-        return next;
-      });
+      const nextTurns = [...turns];
+      nextTurns[nextTurns.length - 1] = {
+        ...nextTurns[nextTurns.length - 1],
+        userAnswer: {
+          text: trimmed,
+          inputMode,
+        },
+      };
+
+      const nextQuestion = questions[currentQuestionIndex + 1] ?? null;
+      if (nextQuestion) {
+        nextTurns.push({
+          question: nextQuestion,
+          assistantMessage: buildPendingAssistantReply(nextQuestion),
+          userAnswer: null,
+        });
+        setTurns(nextTurns);
+        setCurrentQuestionIndex(currentQuestionIndex + 1);
+        return;
+      }
+
+      setTurns(nextTurns);
+      setIsSubmitting(true);
 
       try {
-        const result = await sendThesinatorTurn({
+        const result = await completeThesinatorSession({
           sessionId,
-          questionId: activeQuestion.id,
-          userAnswer: trimmed,
-          inputMode,
           clientToken,
+          answers: nextTurns.map((turn) => ({
+            questionId: turn.question.id,
+            userAnswer: turn.userAnswer?.text ?? "",
+            inputMode: turn.userAnswer?.inputMode ?? "text",
+          })),
         });
 
         setClientToken((prev) => result.client_token ?? prev);
         setCurrentQuestionIndex(result.question_index);
         playAudio(result.audio_b64);
 
-        if (result.is_complete) {
-          const completionTopics =
-            result.top_topics && result.top_topics.length > 0
-              ? result.top_topics
-              : (await fetchThesinatorTopTopics({
-                  sessionId: result.session_id,
-                  clientToken: result.client_token ?? clientToken,
-                  limit: 5,
-                })).top_topics;
+        const completionTopics =
+          result.top_topics && result.top_topics.length > 0
+            ? result.top_topics
+            : (await fetchThesinatorTopTopics({
+                sessionId: result.session_id,
+                clientToken: result.client_token ?? clientToken,
+                limit: 5,
+              })).top_topics;
 
-          setIsComplete(true);
-          setFinalAssistantMessage(result.assistant_reply);
-          setContextSnapshot(result.context_snapshot ?? null);
-          onComplete({
-            sessionId: result.session_id,
-            clientToken: result.client_token ?? clientToken,
-            contextSnapshot: result.context_snapshot ?? null,
-            topTopics: completionTopics,
-            matchingMeta: result.matching_meta ?? null,
-          });
-        } else {
-          const nextQuestion = result.next_question ?? null;
-          if (!nextQuestion) {
-            throw new Error("Missing next question from Thesinator.");
-          }
-
-          setTurns((prev) => [
-            ...prev,
-            {
-              question: nextQuestion,
-              assistantMessage: result.assistant_reply,
-              userAnswer: null,
-            },
-          ]);
-        }
-      } catch (err) {
-        setTurns((prev) => {
-          if (prev.length === 0) {
-            return prev;
-          }
-
-          const next = [...prev];
-          const lastTurn = next[next.length - 1];
-          next[next.length - 1] = {
-            ...lastTurn,
-            userAnswer: null,
-          };
-          return next;
+        setIsComplete(true);
+        setFinalAssistantMessage(result.assistant_reply);
+        setContextSnapshot(result.context_snapshot ?? null);
+        onComplete({
+          sessionId: result.session_id,
+          clientToken: result.client_token ?? clientToken,
+          contextSnapshot: result.context_snapshot ?? null,
+          topTopics: completionTopics,
+          matchingMeta: result.matching_meta ?? null,
         });
+      } catch (err) {
+        const revertedTurns = [...nextTurns];
+        revertedTurns[revertedTurns.length - 1] = {
+          ...revertedTurns[revertedTurns.length - 1],
+          userAnswer: null,
+        };
+        setTurns(revertedTurns);
         setError(err instanceof Error ? err.message : "Could not send answer.");
       } finally {
         setIsSubmitting(false);
       }
     },
-    [activeQuestion, clientToken, isComplete, isSubmitting, onComplete, playAudio, sessionId],
+    [activeQuestion, clientToken, currentQuestionIndex, isComplete, isSubmitting, onComplete, playAudio, questions, sessionId, turns],
   );
 
   const captureSpeechTranscript = useCallback(
@@ -1848,17 +1912,17 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
     }
   }, [isComplete, isSubmitting, stopListening]);
 
-  const totalQuestions = THESINATOR_QUESTION_COUNT;
+  const totalQuestions = questions.length > 0 ? questions.length : THESINATOR_QUESTION_COUNT;
   const answeredCount = answeredTurns.length;
   const progress = Math.min((answeredCount / totalQuestions) * 100, 100);
-  const displayStep = isComplete ? totalQuestions : currentQuestionIndex + 1;
+  const displayStep = isComplete ? totalQuestions : Math.min(currentQuestionIndex + 1, totalQuestions);
 
   const handleTextSubmit = () => {
     void submitAnswer(textInput, "text");
   };
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[200px_minmax(0,1fr)]">
+    <div className="grid gap-5 xl:grid-cols-[228px_minmax(0,1fr)]">
       <div className="flex flex-col items-center gap-3 xl:pt-2">
         <ThesinatorAvatar
           isTyping={isLoadingSession || isSubmitting}
@@ -1909,29 +1973,29 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-border bg-background px-4 py-3">
                     <p className="ds-caption uppercase tracking-[0.14em] text-muted-foreground">Thesinator</p>
-                    <p className="mt-1.5 text-base leading-7 text-foreground">{activeTurn.assistantMessage}</p>
+                    <p className="mt-1 text-[0.94rem] leading-6 text-foreground">{activeTurn.assistantMessage}</p>
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <div className="relative flex h-12 min-w-12 items-center justify-center rounded-2xl bg-primary px-3 text-lg font-bold text-primary-foreground">
+                    <div className="relative flex h-10 min-w-10 items-center justify-center rounded-[1.125rem] bg-primary px-3 text-base font-bold text-primary-foreground">
                       Q{activeTurn.question.id}
                     </div>
-                    <div className="flex-1 rounded-2xl border border-border bg-background px-4 py-3">
-                      <p className="text-[1.1rem] font-semibold leading-7 text-foreground">
+                    <div className="flex-1 rounded-[1.125rem] border border-border bg-background px-4 py-2.5">
+                      <p className="text-[0.94rem] font-normal leading-6 text-foreground">
                         {activeTurn.question.question}
                       </p>
                     </div>
                   </div>
 
                   {!isSubmitting && (
-                    <div className="grid gap-2.5 sm:grid-cols-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
                       {activeTurn.question.options.map((option) => (
                         <button
                           key={option}
                           onClick={() => {
                             void submitAnswer(option, "mcq");
                           }}
-                          className="w-full rounded-2xl border border-border bg-background px-5 py-3.5 text-center text-base font-semibold text-foreground transition-all duration-200 hover:border-primary/50 hover:bg-accent"
+                          className="w-full rounded-[1.125rem] border border-border bg-background px-4 py-2.5 text-center text-[0.92rem] font-normal text-foreground transition-all duration-200 hover:border-primary/50 hover:bg-accent"
                         >
                           {option}
                         </button>
@@ -1942,7 +2006,7 @@ const StepGenieChat = ({ onComplete }: { onComplete: (payload: CompletedDiscover
                   {isSubmitting && (
                     <div className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-background px-4 py-4 text-muted-foreground">
                       <LoaderCircle size={18} className="animate-spin" />
-                      <span className="ds-small">Saving your answer and preparing the next step...</span>
+                      <span className="ds-small">Preparing your matches...</span>
                     </div>
                   )}
 

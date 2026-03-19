@@ -24,6 +24,15 @@ export type SwarmImpact = {
   evidence: string[];
 };
 
+export type AlumniExample = {
+  id: string;
+  full_name: string;
+  thesis_title: string;
+  current_role: string;
+  current_company: string;
+  graduation_year: number;
+};
+
 export type FutureCard = {
   future_id: string;
   source: FutureSource;
@@ -46,6 +55,7 @@ export type FutureCard = {
     experts: FutureEntitySummary[];
     fields: string[];
   };
+  alumni_examples: AlumniExample[];
   saved: boolean;
   simulation_status: SimulationStatus;
   swarm_impact: SwarmImpact | null;

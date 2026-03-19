@@ -28,6 +28,7 @@ export type StartThesinatorResponse = {
   client_token: string | null;
   assistant_reply: string;
   audio_b64: string | null;
+  questions: ThesinatorQuestion[];
   question: ThesinatorQuestion;
   question_index: number;
   is_complete: boolean;
@@ -118,6 +119,41 @@ export const sendThesinatorTurn = async (payload: {
 
   if (!data) {
     throw new Error("Thesinator turn response was empty.");
+  }
+
+  return data;
+};
+
+export const completeThesinatorSession = async (payload: {
+  sessionId: string;
+  answers: Array<{
+    questionId: number;
+    userAnswer: string;
+    inputMode: InputMode;
+  }>;
+  clientToken?: string | null;
+}): Promise<TurnThesinatorResponse> => {
+  const client = requireSupabase();
+
+  const { data, error } = await client.functions.invoke<TurnThesinatorResponse>("thesinator-chat", {
+    body: {
+      action: "complete",
+      session_id: payload.sessionId,
+      client_token: payload.clientToken ?? null,
+      answers: payload.answers.map((answer) => ({
+        question_id: answer.questionId,
+        user_answer: answer.userAnswer,
+        input_mode: answer.inputMode,
+      })),
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || "Failed to complete Thesinator session.");
+  }
+
+  if (!data) {
+    throw new Error("Thesinator completion response was empty.");
   }
 
   return data;

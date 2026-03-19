@@ -6,6 +6,7 @@ external product layer seed scenario context directly into the backend.
 """
 
 import json
+import re
 import threading
 import traceback
 from typing import Any, Dict, List, Optional
@@ -56,6 +57,55 @@ def _truncate(value: str, max_length: int = 160) -> str:
     if len(trimmed) <= max_length:
         return trimmed
     return f"{trimmed[: max(0, max_length - 1)].rstrip()}…"
+
+
+def _normalize_simulation_message(message: Any) -> str:
+    text = _string(message)
+    if not text:
+        return ""
+
+    normalized = text.replace("（", "(").replace("）", ")")
+
+    direct_replacements = {
+        "开始生成...": "Starting agent generation...",
+        "保存Profile文件...": "Saving agent profiles...",
+        "正在连接Zep图谱...": "Connecting to the graph...",
+        "正在读取节点数据...": "Reading graph nodes...",
+        "正在分析模拟需求...": "Analyzing simulation requirements...",
+        "正在调用LLM生成配置...": "Calling the LLM to generate the simulation config...",
+        "正在保存配置文件...": "Saving simulation config...",
+        "配置生成完成": "Simulation config ready",
+    }
+    if normalized in direct_replacements:
+        return direct_replacements[normalized]
+
+    profile_progress_match = re.match(r"^已完成\s*(\d+)\s*/\s*(\d+)\s*:\s*(.+)$", normalized)
+    if profile_progress_match:
+        current, total, label = profile_progress_match.groups()
+        return f"Completed {current}/{total}: {label}"
+
+    entities_complete_match = re.match(r"^完成，共\s*(\d+)\s*个实体$", normalized)
+    if entities_complete_match:
+        return f"Completed, {entities_complete_match.group(1)} entities loaded"
+
+    profiles_complete_match = re.match(r"^完成，共\s*(\d+)\s*个Profile$", normalized)
+    if profiles_complete_match:
+        return f"Completed, {profiles_complete_match.group(1)} profiles generated"
+
+    return normalized
+
+
+def _format_simulation_detail_message(message: Any, current: Any = None, total: Any = None) -> Optional[str]:
+    detail_message = _normalize_simulation_message(message)
+    if not detail_message:
+        return None
+
+    if isinstance(current, int) and isinstance(total, int) and total > 0:
+        count_pattern = rf"\b{current}\s*/\s*{total}\b"
+        if not re.search(count_pattern, detail_message):
+            detail_message = f"{current}/{total} - {detail_message}"
+
+    return detail_message
 
 
 def _task_progress(
@@ -628,6 +678,164 @@ def _normalize_finalized_future(
     }
 
 
+def _finalization_future_context(future_card: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "thesis_title": _string(future_card.get("thesis_title")),
+        "thesis_summary": _string(future_card.get("thesis_summary")),
+        "why_fit": _string(future_card.get("why_fit")),
+        "future_role": _string(future_card.get("future_role")),
+        "future_organization": _string(future_card.get("future_organization")),
+        "future_path_snapshot": _string(future_card.get("future_path_snapshot")),
+        "source": _string(future_card.get("source")),
+        "rank": future_card.get("rank"),
+        "display_rank": future_card.get("display_rank"),
+    }
+
+
+def _finalization_swarm_highlight_context(
+    swarm_highlights: List[Dict[str, Any]],
+    *,
+    compact: bool,
+) -> List[str]:
+    max_items = 4 if compact else 6
+    max_length = 120 if compact else 180
+    return [
+        _truncate(_swarm_highlight_excerpt(highlight), max_length)
+        for highlight in swarm_highlights[:max_items]
+        if isinstance(highlight, dict)
+    ]
+
+
+def _single_future_finalization_messages(
+    future_id: str,
+    future_card: Dict[str, Any],
+    seed_text: str,
+    scenario_description: str,
+    session_context: Any,
+    swarm_highlights: List[Dict[str, Any]],
+    *,
+    compact: bool,
+) -> List[Dict[str, str]]:
+    task = (
+        "Finalize exactly one thesis future for the student-facing product. "
+        "Decide how the finished swarm changed this path and write a concise future-self package. "
+        "Keep every field grounded, calm, specific, and brief. "
+        "Use 1-2 sentences per string field, at most 3 milestones, and at most 3 suggested prompts. "
+        "Do not mention internal tools or simulation engines."
+    )
+    if compact:
+        task = (
+            "Finalize exactly one thesis future. Return concise JSON only. "
+            "Keep each string short, use at most 3 milestones, and at most 3 suggested prompts."
+        )
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a Studyond thesis-outcome synthesizer inside the MiroFish backend. "
+                "Return only JSON."
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "task": task,
+                    "future_id": future_id,
+                    "scenario_description": scenario_description,
+                    "session_context": session_context,
+                    "swarm_highlights": _finalization_swarm_highlight_context(swarm_highlights, compact=compact),
+                    "future_card": _finalization_future_context(future_card),
+                    "seed_text_excerpt": (_string(seed_text) or "")[: (700 if compact else 1200)],
+                    "output_schema": {
+                        "swarm_impact": {
+                            "decision": "up|steady|down",
+                            "display_delta": "integer between -2 and 2",
+                            "why_this_path": "string",
+                            "future_self_angle": "string",
+                            "risks": ["string"],
+                            "evidence": ["string"],
+                        },
+                        "future_detail": {
+                            "hero_title": "string",
+                            "hero_summary": "string",
+                            "opening_note": "string",
+                            "why_this_path": "string",
+                            "future_self_intro": "string",
+                            "story_beat": "string",
+                            "persona_brief": "string",
+                            "milestones": [
+                                {
+                                    "title": "string",
+                                    "detail": "string",
+                                }
+                            ],
+                        },
+                        "suggested_prompts": ["string"],
+                    },
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+        },
+    ]
+
+
+def _single_future_finalization_incomplete(candidate: Any) -> bool:
+    if not isinstance(candidate, dict):
+        return True
+    return not isinstance(candidate.get("swarm_impact"), dict) or not isinstance(candidate.get("future_detail"), dict)
+
+
+def _finalize_single_future(
+    client: Optional[LLMClient],
+    future_id: str,
+    future_card: Dict[str, Any],
+    seed_text: str,
+    scenario_description: str,
+    session_context: Any,
+    swarm_highlights: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if client is None:
+        return _normalize_finalized_future(None, future_id, future_card, swarm_highlights)
+
+    last_error: Optional[Exception] = None
+    for attempt_index, compact in enumerate((False, True), start=1):
+        try:
+            candidate = client.chat_json(
+                _single_future_finalization_messages(
+                    future_id,
+                    future_card,
+                    seed_text,
+                    scenario_description,
+                    session_context,
+                    swarm_highlights,
+                    compact=compact,
+                ),
+                temperature=0.3 if compact else 0.35,
+                max_tokens=950 if compact else 1400,
+            )
+            if _single_future_finalization_incomplete(candidate):
+                raise ValueError("Future finalization returned incomplete JSON")
+            return _normalize_finalized_future(candidate, future_id, future_card, swarm_highlights)
+        except Exception as error:
+            last_error = error if isinstance(error, Exception) else Exception(str(error))
+            logger.warning(
+                "Studyond finalization attempt %s failed for future %s: %s",
+                attempt_index,
+                future_id,
+                last_error,
+            )
+
+    logger.warning(
+        "Studyond finalization fell back to deterministic content for future %s after repeated failures: %s",
+        future_id,
+        last_error,
+    )
+    return _normalize_finalized_future(None, future_id, future_card, swarm_highlights)
+
+
 def _run_graph_build(project_id: str, task_id: str) -> None:
     task_manager = TaskManager()
     project = ProjectManager.get_project(project_id)
@@ -814,9 +1022,11 @@ def _run_swarm_prepare_and_start(
             current_progress = start + int((end - start) * max(0, min(100, progress)) / 100)
             current_item = kwargs.get("current")
             total_items = kwargs.get("total")
-            detail_message = message
-            if isinstance(current_item, int) and isinstance(total_items, int) and total_items > 0:
-                detail_message = f"{current_item}/{total_items} - {message}"
+            detail_message = _format_simulation_detail_message(
+                message,
+                current=current_item,
+                total=total_items,
+            )
 
             _task_progress(
                 task_manager,
@@ -1313,104 +1523,27 @@ def finalize_studyond_session_futures():
                 "error": "Missing future_cards"
             }), 400
 
-        client = LLMClient()
-        llm_result = client.chat_json(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a Studyond thesis-outcome synthesizer inside the MiroFish backend. "
-                        "Use the finished swarm evidence to explain which thesis paths strengthened, weakened, or stayed steady. "
-                        "Return only JSON."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "task": (
-                                "For every thesis future card, decide how the completed swarm run changes the path, "
-                                "then generate the future-self detail package for the student-facing product. "
-                                "Keep the tone grounded, pitch-safe, and specific. "
-                                "Do not mention internal tools or simulation engines."
-                            ),
-                            "scenario_description": scenario_description,
-                            "session_context": session_context,
-                            "swarm_highlights": swarm_highlights[:8],
-                            "future_cards": [
-                                {
-                                    "future_id": item["future_id"],
-                                    "future_card": item["future_card"],
-                                    "seed_text_excerpt": (_string(item.get("seed_text")) or "")[:1600],
-                                }
-                                for item in future_cards
-                            ],
-                            "output_schema": {
-                                "finalized_futures": [
-                                    {
-                                        "future_id": "string",
-                                        "swarm_impact": {
-                                            "decision": "up|steady|down",
-                                            "display_delta": "integer between -2 and 2",
-                                            "why_this_path": "string",
-                                            "future_self_angle": "string",
-                                            "risks": ["string"],
-                                            "evidence": ["string"],
-                                        },
-                                        "future_detail": {
-                                            "hero_title": "string",
-                                            "hero_summary": "string",
-                                            "opening_note": "string",
-                                            "why_this_path": "string",
-                                            "future_self_intro": "string",
-                                            "story_beat": "string",
-                                            "persona_brief": "string",
-                                            "milestones": [
-                                                {
-                                                    "title": "string",
-                                                    "detail": "string",
-                                                }
-                                            ],
-                                        },
-                                        "suggested_prompts": ["string"],
-                                    }
-                                ],
-                            },
-                        },
-                        ensure_ascii=False,
-                        indent=2,
-                    ),
-                },
-            ],
-            temperature=0.35,
-            max_tokens=3200,
-        )
-
-        if not isinstance(llm_result, dict):
-            raise ValueError("Session finalization returned an invalid payload")
-
-        raw_results = llm_result.get("finalized_futures")
-        if not isinstance(raw_results, list):
-            raise ValueError("Session finalization did not return finalized_futures")
-
-        result_map: Dict[str, Dict[str, Any]] = {}
-        for item in raw_results:
-            if not isinstance(item, dict):
-                continue
-            future_id = _string(item.get("future_id"))
-            if not future_id:
-                continue
-            result_map[future_id] = item
+        try:
+            client: Optional[LLMClient] = LLMClient()
+        except Exception as error:
+            logger.warning("Studyond session finalization is using fallback-only mode: %s", error)
+            client = None
 
         finalized_futures = [
-            _normalize_finalized_future(
-                result_map.get(item["future_id"]),
+            _finalize_single_future(
+                client,
                 item["future_id"],
                 item["future_card"],
+                item["seed_text"],
+                scenario_description,
+                session_context,
                 swarm_highlights,
             )
             for item in future_cards
         ]
+
+        if not finalized_futures:
+            raise ValueError("Session finalization could not produce any thesis outcomes")
 
         return jsonify({
             "success": True,

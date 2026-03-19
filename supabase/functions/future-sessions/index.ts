@@ -33,6 +33,15 @@ type EntitySummary = {
   href?: string | null;
 };
 
+type AlumniExample = {
+  id: string;
+  full_name: string;
+  thesis_title: string;
+  current_role: string;
+  current_company: string;
+  graduation_year: number;
+};
+
 type TopicBundle = {
   id: string;
   title: string;
@@ -73,6 +82,7 @@ type FutureCard = {
     experts: EntitySummary[];
     fields: string[];
   };
+  alumni_examples: AlumniExample[];
   saved?: boolean;
   simulation_status?: "queued" | "preparing" | "ready" | "failed";
   swarm_impact?: SwarmImpact | null;
@@ -391,6 +401,52 @@ const normalizeStringArray = (value: unknown): string[] => {
   return [...new Set(value.map((item) => trimString(item)).filter((item): item is string => Boolean(item)))];
 };
 
+const normalizeAlumniExample = (value: unknown): AlumniExample | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const source = value as Record<string, unknown>;
+  const id = trimString(source.id);
+  const fullName = trimString(source.full_name);
+  const thesisTitle = trimString(source.thesis_title);
+  const currentRole = trimString(source.current_role);
+  const currentCompany = trimString(source.current_company);
+  const graduationYear =
+    typeof source.graduation_year === "number" && Number.isFinite(source.graduation_year)
+      ? Math.round(source.graduation_year)
+      : null;
+
+  if (!id || !fullName || !thesisTitle || !currentRole || !currentCompany || !graduationYear) {
+    return null;
+  }
+
+  return {
+    id,
+    full_name: fullName,
+    thesis_title: thesisTitle,
+    current_role: currentRole,
+    current_company: currentCompany,
+    graduation_year: graduationYear,
+  };
+};
+
+const normalizeAlumniExamples = (value: unknown): AlumniExample[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => normalizeAlumniExample(item))
+    .filter((item): item is AlumniExample => Boolean(item))
+    .slice(0, 1);
+};
+
+const toPromptSafeFutureCard = (card: FutureCard) => {
+  const { alumni_examples: _alumniExamples, ...promptSafeCard } = card;
+  return promptSafeCard;
+};
+
 const coerceSnapshot = (value: unknown): ContextSnapshot => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return DEFAULT_CONTEXT_SNAPSHOT;
@@ -573,6 +629,7 @@ const buildMatchedFutureCard = (bundle: TopicBundle, row: TopTopicRow): FutureCa
       experts: bundle.experts.slice(0, 2),
       fields: bundle.fields,
     },
+    alumni_examples: [],
   };
 };
 
@@ -619,6 +676,7 @@ const buildFallbackGeneratedCard = (
       experts: bundle.experts.slice(0, 2),
       fields: bundle.fields,
     },
+    alumni_examples: [],
   };
 };
 
@@ -743,6 +801,7 @@ const buildGeneratedCards = async (input: {
         experts: primaryBundle.experts.slice(0, 2),
         fields: primaryBundle.fields,
       },
+      alumni_examples: [],
     });
   }
 
@@ -923,7 +982,7 @@ const synthesizeFutureDetail = async (card: FutureCard, seedText: string): Promi
     JSON.stringify(
       {
         task: "Expand this future card into a richer detail view for a student-facing thesis future page.",
-        future_card: card,
+        future_card: toPromptSafeFutureCard(card),
         fixed_scenario: FIXED_SCENARIO_PROMPT,
         seed_excerpt: truncateText(seedText, 3000),
         rules: [
@@ -985,6 +1044,7 @@ const synthesizeFutureDetail = async (card: FutureCard, seedText: string): Promi
 };
 
 const composeSwarmSeed = (context: SessionContext, card: FutureCard) => {
+  const promptSafeCard = toPromptSafeFutureCard(card);
   const sourceTopics = card.source_topic_ids
     .map((id) => context.topicBundles.get(id))
     .filter((item): item is TopicBundle => Boolean(item))
@@ -1004,7 +1064,7 @@ const composeSwarmSeed = (context: SessionContext, card: FutureCard) => {
     `Context snapshot:\n${JSON.stringify(context.snapshot, null, 2)}`,
     `Transcript excerpt:\n${truncateText(context.transcriptText, 2000)}`,
     `Profile document excerpt:\n${truncateText(context.profileDocument, 2000)}`,
-    `Future card:\n${JSON.stringify(card, null, 2)}`,
+    `Future card:\n${JSON.stringify(promptSafeCard, null, 2)}`,
     `Linked source topics:\n${JSON.stringify(sourceTopics, null, 2)}`,
     `Top matched topics:\n${JSON.stringify(
       context.topTopicRows.slice(0, 5).map((row) => ({
@@ -1530,6 +1590,7 @@ const hydrateFutureRow = (row: Record<string, unknown>): FutureCard => {
   const simulationStatus = trimString(row.deep_status);
   const normalizedCard = {
     ...card,
+    alumni_examples: normalizeAlumniExamples(card.alumni_examples),
     display_rank:
       typeof row.display_rank === "number" && Number.isFinite(row.display_rank)
         ? Math.round(row.display_rank)
@@ -1552,6 +1613,122 @@ const hydrateFutureRow = (row: Record<string, unknown>): FutureCard => {
         : "queued",
     swarm_impact: row.swarm_impact ? normalizeSwarmImpact(row.swarm_impact, normalizedCard) : null,
   } satisfies FutureCard;
+};
+
+const buildAlumniExampleFromRow = (row: Record<string, unknown>): AlumniExample | null => {
+  const thesis =
+    row.thesis && typeof row.thesis === "object" && !Array.isArray(row.thesis)
+      ? (row.thesis as Record<string, unknown>)
+      : {};
+  const currentOutcome =
+    row.current_outcome && typeof row.current_outcome === "object" && !Array.isArray(row.current_outcome)
+      ? (row.current_outcome as Record<string, unknown>)
+      : {};
+
+  return normalizeAlumniExample({
+    id: row.id,
+    full_name: row.full_name,
+    thesis_title: thesis.title,
+    current_role: currentOutcome.roleTitle,
+    current_company: currentOutcome.companyName,
+    graduation_year: row.graduation_year,
+  });
+};
+
+const enrichCardsWithAlumniExamples = async (
+  adminClient: ReturnType<typeof createClient>,
+  cards: FutureCard[],
+): Promise<FutureCard[]> => {
+  const uniqueTopicIds = [...new Set(
+    cards
+      .flatMap((card) => [card.topic_id, ...card.source_topic_ids])
+      .filter((topicId): topicId is string => Boolean(topicId)),
+  )];
+
+  if (uniqueTopicIds.length === 0) {
+    return cards.map((card) => ({ ...card, alumni_examples: [] }));
+  }
+
+  const { data: thesisProjects, error: thesisProjectsError } = await adminClient
+    .from("thesis_projects")
+    .select("topic_id, source_id")
+    .in("topic_id", uniqueTopicIds);
+
+  if (thesisProjectsError) {
+    throw new Error(thesisProjectsError.message);
+  }
+
+  const projectIdsByTopic = new Map<string, string[]>();
+  for (const thesisProject of thesisProjects ?? []) {
+    const topicId = trimString(thesisProject.topic_id);
+    const projectSourceId = trimString(thesisProject.source_id);
+    if (!topicId || !projectSourceId) {
+      continue;
+    }
+
+    const existing = projectIdsByTopic.get(topicId) ?? [];
+    if (!existing.includes(projectSourceId)) {
+      existing.push(projectSourceId);
+      projectIdsByTopic.set(topicId, existing);
+    }
+  }
+
+  const uniqueProjectSourceIds = [...new Set(
+    [...projectIdsByTopic.values()].flat().filter((projectSourceId) => Boolean(projectSourceId)),
+  )];
+
+  if (uniqueProjectSourceIds.length === 0) {
+    return cards.map((card) => ({ ...card, alumni_examples: [] }));
+  }
+
+  const { data: alumniRows, error: alumniError } = await adminClient
+    .from("alumni_paths")
+    .select("id, full_name, graduation_year, thesis, current_outcome, source_project_id")
+    .in("source_project_id", uniqueProjectSourceIds);
+
+  if (alumniError) {
+    throw new Error(alumniError.message);
+  }
+
+  const alumniByProject = new Map<string, AlumniExample[]>();
+  for (const alumniRow of alumniRows ?? []) {
+    const projectSourceId = trimString(alumniRow.source_project_id);
+    const example = buildAlumniExampleFromRow(alumniRow as Record<string, unknown>);
+    if (!projectSourceId || !example) {
+      continue;
+    }
+
+    const existing = alumniByProject.get(projectSourceId) ?? [];
+    existing.push(example);
+    alumniByProject.set(projectSourceId, existing);
+  }
+
+  for (const [projectSourceId, examples] of alumniByProject.entries()) {
+    alumniByProject.set(
+      projectSourceId,
+      [...examples].sort(
+        (left, right) =>
+          right.graduation_year - left.graduation_year || left.full_name.localeCompare(right.full_name),
+      ),
+    );
+  }
+
+  return cards.map((card) => {
+    const orderedTopicIds = [...new Set(
+      [card.topic_id, ...card.source_topic_ids].filter((topicId): topicId is string => Boolean(topicId)),
+    )];
+    const orderedProjectSourceIds = [...new Set(
+      orderedTopicIds.flatMap((topicId) => projectIdsByTopic.get(topicId) ?? []),
+    )];
+
+    const alumniExample =
+      orderedProjectSourceIds.flatMap((projectSourceId) => alumniByProject.get(projectSourceId) ?? [])[0] ?? null;
+
+    return {
+      ...card,
+      alumni_examples: alumniExample ? [alumniExample] : [],
+    };
+  });
 };
 
 const loadTopicBundles = async (adminClient: ReturnType<typeof createClient>, topicIds: string[]) => {
@@ -1848,7 +2025,10 @@ const buildSessionFinalizationPayload = (
     result: action.result,
     success: action.success,
   })),
-  future_cards: futures,
+  future_cards: futures.map((item) => ({
+    ...item,
+    future_card: toPromptSafeFutureCard(item.future_card),
+  })),
 });
 
 const ensureSessionFinalized = async (
@@ -2527,6 +2707,9 @@ const handleCreate = async (req: Request) => {
     card.rank = matchedCards.length + index + 1;
   });
 
+  const enrichedMatchedCards = await enrichCardsWithAlumniExamples(adminClient, matchedCards);
+  const enrichedGeneratedCards = await enrichCardsWithAlumniExamples(adminClient, generatedCards);
+
   const { data: createdSession, error: createdSessionError } = await adminClient
     .from("future_sessions")
     .insert({
@@ -2546,7 +2729,7 @@ const handleCreate = async (req: Request) => {
     throw new Error(createdSessionError.message);
   }
 
-  const allCards = [...matchedCards, ...generatedCards].map((card) => ({
+  const allCards = [...enrichedMatchedCards, ...enrichedGeneratedCards].map((card) => ({
     future_session_id: createdSession.id,
     source: card.source,
     rank: card.rank,
@@ -2871,7 +3054,7 @@ const handleFutureChat = async (req: Request, futureSessionId: string, futureId:
     JSON.stringify(
       {
         task: "Reply as the student's future self in plain text. Stay in character. Keep it grounded and actionable.",
-        future_card: card,
+        future_card: toPromptSafeFutureCard(card),
         future_detail: detail,
         swarm_impact: swarmImpact,
         recent_history: history,

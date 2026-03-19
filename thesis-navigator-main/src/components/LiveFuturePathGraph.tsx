@@ -515,7 +515,7 @@ export const LiveFuturePathGraph = ({
       {preparedNodes.length === 0 ? (
         <div className="flex min-h-[320px] items-center justify-center rounded-[1.5rem] border border-dashed border-border bg-muted/30">
           <p className="ds-small text-muted-foreground">
-            Your path map will appear as soon as the first stakeholders land.
+            Your map will appear as soon as the first connections are ready.
           </p>
         </div>
       ) : (
@@ -534,11 +534,11 @@ export const LiveFuturePathGraph = ({
 
             <div className="pointer-events-none absolute left-4 top-4 flex flex-wrap gap-2">
               <span className="rounded-full border border-border bg-background/95 px-3 py-1 ds-caption text-muted-foreground shadow-sm">
-                Drag nodes to untangle the path
+                Drag to rearrange the map
               </span>
               {isLive && (
                 <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 ds-caption text-primary shadow-sm">
-                  Updating live
+                  Updating now
                 </span>
               )}
             </div>
@@ -561,7 +561,7 @@ export const LiveFuturePathGraph = ({
 
           <div>
             <div className="rounded-[1.25rem] border border-border bg-card p-4 shadow-sm">
-              <p className="ds-caption uppercase tracking-[0.16em] text-muted-foreground">Selected stakeholder</p>
+              <p className="ds-caption uppercase tracking-[0.16em] text-muted-foreground">Selected connection</p>
               {selectedNode ? (
                 <>
                   <div className="mt-3 flex items-center gap-2">
@@ -578,7 +578,7 @@ export const LiveFuturePathGraph = ({
                 </>
               ) : (
                 <p className="mt-3 ds-small text-muted-foreground">
-                  Click any node in the graph to inspect who they are and how they fit into the path.
+                  Click any point on the map to see who they are and why they matter for this path.
                 </p>
               )}
             </div>
